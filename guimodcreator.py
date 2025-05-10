@@ -1,5 +1,3 @@
-import os
-import json
 import tkinter as tk
 import sys
 import urllib.request
@@ -10,6 +8,7 @@ import json, os
 from tkinter import simpledialog
 from tkinter import ttk
 from tkinter import *
+from PIL import Image
 from tkinter import messagebox
 from tqdm import tqdm
 
@@ -81,7 +80,9 @@ def load_or_create_cache(mod_folder):
         "bridge_conveyor": ["bridge_conveyor"],
         "bridge_conveyor_enegry": ["phase_conveyor"],
         "bridge-conduit": ["bridge-conduit"],
-        "bridge-conduit_enegry": ["phase-conduit"]
+        "battery": ["battery", "battery-large"],
+        "bridge-conduit_enegry": ["phase-conduit"],
+        "Drill": ["mechanical-drill", "pneumatic-drill", "laser-drill", "blast-drill"]
     }
     path = os.path.join(mod_folder, "cache.json")
     if not os.path.exists(path):
@@ -449,6 +450,16 @@ class MindustryModCreator:
                 canvas.itemconfig(window_id, width=canvas_width)
 
             scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+            def _on_mousewheel(event):
+                try:
+                    canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+                except tk.TclError:
+                    pass
+
+            canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", _on_mousewheel))
+            canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
+            canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
+            canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
             canvas.bind("<Configure>", resize_canvas)
 
             blocks = [
@@ -464,6 +475,8 @@ class MindustryModCreator:
                 ("Создать жидкостный мост", lambda: cb_bridge_liquid_create()),
                 ("Создать жидкостный мост (на энергии)", lambda: cb_bridge_liquid_energy_create()),
                 ("Создать руду", lambda: cb_ore_create()),
+                ("Создать бур", lambda: cb_byp_create()),
+                ("Создать батарейку", lambda: cb_battery_create()),
                 ("Назад", lambda: создание_кнопки())
             ]
 
@@ -610,6 +623,7 @@ class MindustryModCreator:
 
                 tk.Button(top, text="Сохранить", command=save_changes).pack(pady=5)
             #////////////////////////////////////////////////////////////
+            
             def open_requirements_editor(block_name, block_data):
                 clear_window()
 
@@ -722,6 +736,132 @@ class MindustryModCreator:
                                 print(f"Ошибка при загрузке текстуры: {e}")
                         else:
                             print(f"Текстура {texture_name} уже существует, загрузка пропущена.")
+
+                tk.Button(root, text="Готово", command=finalize_block, font=10).pack(pady=20)
+  
+            def open_requirements_editor_byp(block_name, block_data):
+                clear_window()
+
+                tk.Label(root, text=f"Выбор ресурсов для стройки '{block_name}'", font=("Arial", 14)).pack(pady=10)
+
+                frame = tk.Frame(root)
+                frame.pack(pady=10)
+
+                # Списки
+                default_listbox = tk.Listbox(frame, width=20, height=10)
+                mod_listbox = tk.Listbox(frame, width=20, height=10)
+                selected_listbox = tk.Listbox(frame, width=30, height=10)
+
+                default_listbox.grid(row=0, column=0, padx=5)
+                mod_listbox.grid(row=0, column=1, padx=5)
+                selected_listbox.grid(row=0, column=2, padx=5)
+
+                # Списки ресурсов
+                default_items = [
+                    "copper", "lead", "metaglass", "graphite", "sand", "coal",
+                    "titanium", "thorium", "scrap", "silicon", "plastanium",
+                    "phase-fabric", "surge-alloy", "spore-pod", "blast-compound", "pyratite"
+                ]
+                for item in default_items:
+                    default_listbox.insert(tk.END, item)
+
+                # Загружаем модовые предметы
+                mod_items_path = os.path.join(mod_folder, "content", "items")
+                if os.path.exists(mod_items_path):
+                    for f in os.listdir(mod_items_path):
+                        if f.endswith(".json"):
+                            mod_listbox.insert(tk.END, f.replace(".json", ""))
+
+                # Поле для количества
+                entry_amount = tk.Entry(root, width=10)
+                entry_amount.pack()
+                entry_amount.insert(0, "1")
+
+                def add_from_listbox(listbox):
+                    try:
+                        amount = int(entry_amount.get())
+                        if amount < 1 or amount > 5000:
+                            raise ValueError
+                    except ValueError:
+                        messagebox.showerror("Ошибка", "Введите корректное количество от 1 до 5000!")
+                        return
+
+                    selected = listbox.curselection()
+                    if not selected:
+                        messagebox.showerror("Ошибка", "Выберите ресурс!")
+                        return
+
+                    item = listbox.get(selected[0])
+                    block_data["requirements"].append({"item": item, "amount": amount})
+                    selected_listbox.insert(tk.END, f"{item} x{amount}")
+
+                def remove_selected():
+                    selected = selected_listbox.curselection()
+                    if not selected:
+                        return
+                    index = selected[0]
+                    selected_listbox.delete(index)
+                    del block_data["requirements"][index]
+
+                # Кнопки
+                button_frame = tk.Frame(root)
+                button_frame.pack(pady=10)
+
+                tk.Button(button_frame, text="Добавить слева", command=lambda: add_from_listbox(default_listbox)).grid(row=0, column=0, padx=5)
+                tk.Button(button_frame, text="Добавить из мода", command=lambda: add_from_listbox(mod_listbox)).grid(row=0, column=1, padx=5)
+                tk.Button(button_frame, text="Убрать выбранное", command=remove_selected).grid(row=0, column=2, padx=5)
+
+                def finalize_block():
+                    block_type = block_data.get("type")
+                    size = block_data.get("size")
+
+                    if size:
+                        texture_names = [
+                            "drill", "drill-top", "drill-rotator", "drill-rim"
+                        ]
+
+                        sprite_folder = os.path.join(mod_folder, "sprites", block_type, block_name)
+                        os.makedirs(sprite_folder, exist_ok=True)
+
+                        base_url = "https://raw.githubusercontent.com/gbvxgzbwba/texture123/main/drills/"
+                        missing_textures = []
+
+                        for name in texture_names:
+                            new_name = name.replace("drill", block_name, 1)
+                            texture_path = os.path.join(sprite_folder, f"{new_name}.png")
+                            if not os.path.exists(texture_path):
+                                missing_textures.append((name, new_name, texture_path))
+
+                            content_folder = os.path.join(mod_folder, "content", "blocks", block_type)
+                            os.makedirs(content_folder, exist_ok=True)
+
+                            block_path = os.path.join(content_folder, f"{block_name}.json")
+                            try:
+                                with open(block_path, "w", encoding="utf-8") as f:
+                                    json.dump(block_data, f, indent=4, ensure_ascii=False)
+                            except Exception as e:
+                                messagebox.showerror("Ошибка", f"Не удалось сохранить JSON: {e}")
+                                return
+
+                        if len(missing_textures) < len(texture_names):
+                            messagebox.showinfo("Пропуск", "Некоторые текстуры уже установлены.")
+
+                        for name, new_name, texture_path in tqdm(missing_textures, desc="Загрузка текстур", colour="#65EC3B"):
+                            texture_url = f"{base_url}{name}.png"
+                            try:
+                                urllib.request.urlretrieve(texture_url, texture_path)
+                                print(f"✅ Загружено: {new_name}.png в {texture_path}")
+
+                                # Масштабирование
+                                img = Image.open(texture_path)
+                                scale = size  # 1 → 32x32, 2 → 64x64 и т.д.
+                                new_size = (32 * scale, 32 * scale)
+                                img = img.resize(new_size, Image.NEAREST)
+                                img.save(texture_path)
+                                print(f"📐 Масштабировано: {new_name}.png до {new_size}")
+                            except Exception as e:
+                                print(f"❌ Ошибка при обработке {new_name}.png: {e}")
+                    создание_кнопки()
 
                 tk.Button(root, text="Готово", command=finalize_block, font=10).pack(pady=20)
 
@@ -1682,7 +1822,7 @@ class MindustryModCreator:
                 entry_size.pack()
 
                 # ✅ Чтение cache.json
-                with open(resource_path(mod_folder, "cache.json"), "r", encoding="utf-8") as f:
+                with open(resource_path(os.path.join(mod_folder, "cache.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
                 tk.Label(root, text="Исследования для открытия").pack()
@@ -1735,7 +1875,8 @@ class MindustryModCreator:
                     if name not in CACHE_FILE.get("wall", []):
                         CACHE_FILE["wall"].append(name)
 
-                    with open(resource_path(mod_folder, "cache.json"), "w", encoding="utf-8") as f:
+                    with open(resource_path(os.path.join(mod_folder, "cache.json")), "w", encoding="utf-8") as f:
+
                         json.dump(CACHE_FILE, f, indent=4, ensure_ascii=False)  # ✅
 
                     if name_exists_in_content(mod_folder, name, "wall"):
@@ -1771,7 +1912,7 @@ class MindustryModCreator:
                 entry_energy_input.pack()
 
                 # ✅ Чтение cache.json
-                with open(resource_path(mod_folder, "cache.json"), "r", encoding="utf-8") as f:
+                with open(resource_path(os.path.join(mod_folder, "cache.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
                 tk.Label(root, text="Исследования для открытия").pack()
@@ -1829,7 +1970,7 @@ class MindustryModCreator:
                     if name not in CACHE_FILE.get("SolarGenerator", []):
                         CACHE_FILE["SolarGenerator"].append(name)
 
-                    with open(resource_path(mod_folder, "cache.json"), "w", encoding="utf-8") as f:
+                    with open(resource_path(os.path.join(mod_folder, "cache.json")), "w", encoding="utf-8") as f:
                         json.dump(CACHE_FILE, f, indent=4, ensure_ascii=False)  # ✅
 
                     if name_exists_in_content(mod_folder, name, "SolarGenerator"):
@@ -1865,7 +2006,7 @@ class MindustryModCreator:
                 entry_energy_input.pack()
 
                 # ✅ Чтение cache.json
-                with open(resource_path(mod_folder, "cache.json"), "r", encoding="utf-8") as f:
+                with open(resource_path(os.path.join(mod_folder, "cache.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
                 tk.Label(root, text="Исследования для открытия").pack()
@@ -1930,7 +2071,7 @@ class MindustryModCreator:
                     if name not in CACHE_FILE.get("ConsumeGenerator", []):
                         CACHE_FILE["ConsumeGenerator"].append(name)
 
-                    with open(resource_path(mod_folder, "cache.json"), "w", encoding="utf-8") as f:
+                    with open(resource_path(os.path.join(mod_folder, "cache.json")), "w", encoding="utf-8") as f:
                         json.dump(CACHE_FILE, f, indent=4, ensure_ascii=False)  # ✅
 
                     if name_exists_in_content(mod_folder, name, "ConsumeGenerator"):
@@ -1966,7 +2107,7 @@ class MindustryModCreator:
                 entry_itemCapacity.pack()
 
                 # ✅ Чтение cache.json
-                with open(resource_path(mod_folder, "cache.json"), "r", encoding="utf-8") as f:
+                with open(resource_path(os.path.join(mod_folder, "cache.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
                 tk.Label(root, text="Исследования для открытия").pack()
@@ -2025,7 +2166,7 @@ class MindustryModCreator:
                     if name not in CACHE_FILE.get("StorageBlock", []):
                         CACHE_FILE["StorageBlock"].append(name)
 
-                    with open(resource_path(mod_folder, "cache.json"), "w", encoding="utf-8") as f:
+                    with open(resource_path(os.path.join(mod_folder, "cache.json")), "w", encoding="utf-8") as f:
                         json.dump(CACHE_FILE, f, indent=4, ensure_ascii=False)  # ✅
 
                     if name_exists_in_content(mod_folder, name, "StorageBlock"):
@@ -2077,7 +2218,7 @@ class MindustryModCreator:
                 entry_time_input = tk.Entry(root, width=10)
                 entry_time_input.pack()
 
-                with open(resource_path(mod_folder, "cache.json"), "r", encoding="utf-8") as f:
+                with open(resource_path(os.path.join(mod_folder, "cache.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
                 tk.Label(root, text="Исследования для открытия").pack()
@@ -2159,7 +2300,7 @@ class MindustryModCreator:
                     if name not in CACHE_FILE.get("GenericCrafter", []):
                         CACHE_FILE["GenericCrafter"].append(name)
 
-                    with open(resource_path(mod_folder, "cache.json"), "w", encoding="utf-8") as f:
+                    with open(resource_path(os.path.join(mod_folder, "cache.json")), "w", encoding="utf-8") as f:
                         json.dump(CACHE_FILE, f, indent=4, ensure_ascii=False)
 
                     if name_exists_in_content(mod_folder, name, "GenericCrafter"):
@@ -2168,7 +2309,7 @@ class MindustryModCreator:
                     open_item_GenericCrafter_editor(name, block_data)
 
                 tk.Button(root, text="💾 Сохранить", bg="#d0ffd0", command=save_GenericCrafter).pack(pady=20)
-                tk.Button(root, text="Назад", font=0, command=создание_кнопки).pack()
+                tk.Button(root, text="Назад", font=0, command=lambda: create_block()).pack()
 
             def cb_conveyor_create():
                 clear_window()
@@ -2190,7 +2331,7 @@ class MindustryModCreator:
                 entry_speed.pack()
 
                 # ✅ Чтение cache.json
-                with open(resource_path(mod_folder, "cache.json"), "r", encoding="utf-8") as f:
+                with open(resource_path(os.path.join(mod_folder, "cache.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
                 tk.Label(root, text="Исследования для открытия").pack()
@@ -2239,7 +2380,7 @@ class MindustryModCreator:
                     if name not in CACHE_FILE.get("conveyor", []):
                         CACHE_FILE["conveyor"].append(name)
 
-                    with open(resource_path(mod_folder, "cache.json"), "w", encoding="utf-8") as f:
+                    with open(resource_path(os.path.join(mod_folder, "cache.json")), "w", encoding="utf-8") as f:
                         json.dump(CACHE_FILE, f, indent=4, ensure_ascii=False)  # ✅
 
                     if name_exists_in_content(mod_folder, name, "conveyor"):
@@ -2270,7 +2411,7 @@ class MindustryModCreator:
                 entry_speed.pack()
 
                 # ✅ Чтение cache.json
-                with open(resource_path(mod_folder, "cache.json"), "r", encoding="utf-8") as f:
+                with open(resource_path(os.path.join(mod_folder, "cache.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
                 tk.Label(root, text="Исследования для открытия").pack()
@@ -2319,7 +2460,7 @@ class MindustryModCreator:
                     if name not in CACHE_FILE.get("conduit", []):
                         CACHE_FILE["conduit"].append(name)
 
-                    with open(resource_path(mod_folder, "cache.json"), "w", encoding="utf-8") as f:
+                    with open(resource_path(os.path.join(mod_folder, "cache.json")), "w", encoding="utf-8") as f:
                         json.dump(CACHE_FILE, f, indent=4, ensure_ascii=False)  # ✅
 
                     if name_exists_in_content(mod_folder, name, "conduit"):
@@ -2354,7 +2495,7 @@ class MindustryModCreator:
                 entry_range.pack()
 
                 # ✅ Чтение cache.json
-                with open(resource_path(mod_folder, "cache.json"), "r", encoding="utf-8") as f:
+                with open(resource_path(os.path.join(mod_folder, "cache.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
                 tk.Label(root, text="Исследования для открытия").pack()
@@ -2404,7 +2545,7 @@ class MindustryModCreator:
                     if name not in CACHE_FILE.get("bridge_conveyor", []):
                         CACHE_FILE["bridge_conveyor"].append(name)
 
-                    with open(resource_path(mod_folder, "cache.json"), "w", encoding="utf-8") as f:
+                    with open(resource_path(os.path.join(mod_folder, "cache.json")), "w", encoding="utf-8") as f:
                         json.dump(CACHE_FILE, f, indent=4, ensure_ascii=False)  # ✅
 
                     if name_exists_in_content(mod_folder, name, "bridge_conveyor"):
@@ -2443,7 +2584,7 @@ class MindustryModCreator:
                 entry_energy_input.pack()
 
                 # ✅ Чтение cache.json
-                with open(resource_path(mod_folder, "cache.json"), "r", encoding="utf-8") as f:
+                with open(resource_path(os.path.join(mod_folder, "cache.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
                 tk.Label(root, text="Исследования для открытия").pack()
@@ -2498,7 +2639,7 @@ class MindustryModCreator:
                     if name not in CACHE_FILE.get("bridge_conveyor_enegry", []):
                         CACHE_FILE["bridge_conveyor_enegry"].append(name)
 
-                    with open(resource_path(mod_folder, "cache.json"), "w", encoding="utf-8") as f:
+                    with open(resource_path(os.path.join(mod_folder, "cache.json")), "w", encoding="utf-8") as f:
                         json.dump(CACHE_FILE, f, indent=4, ensure_ascii=False)  # ✅
 
                     if name_exists_in_content(mod_folder, name, "bridge_conveyor_enegry"):
@@ -2533,7 +2674,7 @@ class MindustryModCreator:
                 entry_range.pack()
 
                 # ✅ Чтение cache.json
-                with open(resource_path(mod_folder, "cache.json"), "r", encoding="utf-8") as f:
+                with open(resource_path(os.path.join(mod_folder, "cache.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
                 tk.Label(root, text="Исследования для открытия").pack()
@@ -2580,7 +2721,7 @@ class MindustryModCreator:
                     if name not in CACHE_FILE.get("bridge_conduit", []):
                         CACHE_FILE["bridge_conduit"].append(name)
 
-                    with open(resource_path(mod_folder, "cache.json"), "w", encoding="utf-8") as f:
+                    with open(resource_path(os.path.join(mod_folder, "cache.json")), "w", encoding="utf-8") as f:
                         json.dump(CACHE_FILE, f, indent=4, ensure_ascii=False)  # ✅
 
                     if name_exists_in_content(mod_folder, name, "bridge_conduit"):
@@ -2614,7 +2755,7 @@ class MindustryModCreator:
                 entry_energy_input.pack()
 
                 # ✅ Чтение cache.json
-                with open(resource_path(mod_folder, "cache.json"), "r", encoding="utf-8") as f:
+                with open(resource_path(os.path.join(mod_folder, "cache.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
                 tk.Label(root, text="Исследования для открытия").pack()
@@ -2666,7 +2807,7 @@ class MindustryModCreator:
                     if name not in CACHE_FILE.get("bridge_conduit_enegry", []):
                         CACHE_FILE["bridge_conduit_enegry"].append(name)
 
-                    with open(resource_path(mod_folder, "cache.json"), "w", encoding="utf-8") as f:
+                    with open(resource_path(os.path.join(mod_folder, "cache.json")), "w", encoding="utf-8") as f:
                         json.dump(CACHE_FILE, f, indent=4, ensure_ascii=False)  # ✅
 
                     if name_exists_in_content(mod_folder, name, "bridge_conduit_enegry"):
@@ -2769,6 +2910,8 @@ class MindustryModCreator:
 
                     name = items_listbox.get(selection[0])
 
+                    download_ore_textures(name, mod_folder)
+
                     # Ввод твёрдости
                     hardness = simpledialog.askinteger("Твёрдость", "Введите твёрдость руды (1-15):", minvalue=1, maxvalue=15)
                     if hardness is None:
@@ -2820,6 +2963,11 @@ class MindustryModCreator:
                     ores_listbox.delete(selection[0])
                     items_listbox.insert(tk.END, name)
 
+                    # Удаление текстур
+                    texture_folder = os.path.join(mod_folder, "sprites", "blocks", "ore", name)
+                    if os.path.exists(texture_folder):
+                        shutil.rmtree(texture_folder)
+
                     # Удаление твёрдости из предмета
                     item_path = os.path.join(mod_items_path, f"{name}.json")
                     if os.path.exists(item_path):
@@ -2834,6 +2982,20 @@ class MindustryModCreator:
                         with open(item_path, "w", encoding="utf-8") as f:
                             json.dump(item_data, f, indent=4, ensure_ascii=False)
 
+                def download_ore_textures(item_name, mod_folder):
+                    """Скачивает ore1, ore2, ore3 для руды и сохраняет в нужную папку."""
+                    texture_url_base = "https://raw.githubusercontent.com/gbvxgzbwba/texture123/main/ore"
+                    target_folder = os.path.join(mod_folder, "sprites", "blocks", "ore", item_name)
+                    os.makedirs(target_folder, exist_ok=True)
+
+                    for i in range(1, 4):
+                        texture_url = f"{texture_url_base}/ore{i}.png"
+                        dest_path = os.path.join(target_folder, f"ore{i}.png")
+                        try:
+                            urllib.request.urlretrieve(texture_url, dest_path)
+                        except Exception as e:
+                            print(f"Ошибка при загрузке ore{i}.png: {e}")
+
                 button_frame = tk.Frame(root)
                 button_frame.pack(pady=10)
 
@@ -2847,6 +3009,219 @@ class MindustryModCreator:
                 tk.Button(info_frame, text="Инфо о руде (?)", command=show_ore_info).grid(row=0, column=1, padx=5)
 
                 tk.Button(root, text="Назад", command=создание_кнопки, font=10).pack(pady=20)
+
+            def cb_byp_create():
+                clear_window()
+
+                tk.Label(root, text="Имя бура").pack()
+                entry_name = tk.Entry(root, width=50)
+                entry_name.pack()
+
+                tk.Label(root, text="Описание").pack()
+                entry_desc = tk.Entry(root, width=50)
+                entry_desc.pack()
+
+                tk.Label(root, text="ХП").pack()
+                entry_health = tk.Entry(root, width=10)
+                entry_health.pack()
+
+                tk.Label(root, text="Размер (макс. 10)").pack()
+                entry_size = tk.Entry(root, width=10)
+                entry_size.pack()
+
+                tk.Label(root, text="Сила (1–15)").pack()
+                entry_hardness = tk.Entry(root, width=10)
+                entry_hardness.pack()
+
+                energy_enabled = tk.BooleanVar(value=False)
+
+                def toggle_energy():
+                    if energy_enabled.get():
+                        frame_power.pack()
+                    else:
+                        frame_power.pack_forget()
+
+                ttk.Checkbutton(root, text="Использует энергию", variable=energy_enabled, command=toggle_energy).pack(pady=6)
+
+                frame_power = tk.Frame(root)
+                tk.Label(frame_power, text="Потребление энергии (эн/сек):").pack(side=tk.LEFT)
+                entry_power_use = tk.Entry(frame_power, width=10)
+                entry_power_use.pack(side=tk.LEFT)
+                frame_power.pack_forget()
+
+                # ✅ Чтение cache.json
+                cache_path = os.path.join(mod_folder, "cache.json")  # Создаём правильный путь
+                with open(cache_path, "r", encoding="utf-8") as f:
+                    CACHE_FILE = json.load(f)
+
+                tk.Label(root, text="Исследования для открытия").pack()
+                research_parent_entry = ttk.Combobox(
+                    root,
+                    values=CACHE_FILE.get("Drill", []),
+                    state="readonly",
+                    width=30
+                )
+                research_parent_entry.pack()
+
+                def save_Drill():
+                    name = entry_name.get().strip().replace(" ", "_")
+                    description = entry_desc.get().strip()
+                    parent_value = research_parent_entry.get()
+                    if energy_enabled.get():
+                        try:
+                            power_usage = (1 / 60) * int(entry_power_use.get())
+                            if power_usage > 0:
+                                block_data["consumes"] = {
+                                    "power": power_usage
+                                }
+                        except ValueError:
+                            messagebox.showerror("Ошибка", "Введите целое число для потребления энергии.")
+                            return
+
+                    try:
+                        health = int(entry_health.get())
+                        size = int(entry_size.get())
+                        hardness = int(entry_hardness.get())
+                        if size > 10 or size < 1 or hardness > 15 or hardness < 1:
+                            raise ValueError
+                    except ValueError:
+                        messagebox.showerror("Ошибка", "Введите корректные числа. Размер до 10, сила от 1 до 15.")
+                        return
+
+                    if not name or not description:
+                        messagebox.showerror("Ошибка", "Все поля должны быть заполнены!")
+                        return
+
+                    block_data = {
+                        "name": name,
+                        "description": description,
+                        "health": health,
+                        "size": size,
+                        "drillTier": hardness,
+                        "category": "production",
+                        "liquidCapacity": 60,
+                        "type": "Drill",
+                        "requirements": [],
+                        "research": {
+                            "parent": parent_value,
+                            "requirements": [],
+                            "objectives": []
+                        },
+                        "_comment": {
+                            "name": "Имя в игре",
+                            "description": "Описание в игре",
+                            "health": "Здоровье",
+                            "size": "Размер блока (в клетках)",
+                            "hardness": "Максимальная твёрдость добываемой руды"
+                        }
+                    }
+
+                    if name not in CACHE_FILE.get("Drill", []):
+                        CACHE_FILE["Drill"].append(name)
+
+                    with open(cache_path, "w", encoding="utf-8") as f:  # Используем правильный путь
+                        json.dump(CACHE_FILE, f, indent=4, ensure_ascii=False)
+
+                    if name_exists_in_content(mod_folder, name, "Drill"):
+                        return  # Остановить сохранение
+
+                    open_requirements_editor_byp(name, block_data)
+
+                tk.Button(root, text="⬅️ Назад", font=0, command=lambda: create_block()).pack(pady=20)
+                tk.Button(root, text="💾 Сохранить", bg="#d0ffd0", command=save_Drill).pack(pady=20)
+
+            def cb_battery_create():
+                clear_window()
+
+                tk.Label(root, text="Имя Батарейки").pack()
+                entry_name = tk.Entry(root, width=50)
+                entry_name.pack()
+
+                tk.Label(root, text="Описание").pack()
+                entry_desc = tk.Entry(root, width=50)
+                entry_desc.pack()
+
+                tk.Label(root, text="ХП").pack()
+                entry_health = tk.Entry(root, width=10)
+                entry_health.pack()
+
+                tk.Label(root, text="Размер (макс. 10)").pack()
+                entry_size = tk.Entry(root, width=10)
+                entry_size.pack()
+
+                tk.Label(root, text="Хранит энергии").pack()
+                entry_power = tk.Entry(root, width=10)
+                entry_power.pack()
+
+                # ✅ Чтение cache.json
+                with open(resource_path(os.path.join(mod_folder, "cache.json")), "r", encoding="utf-8") as f:
+                    CACHE_FILE = json.load(f)
+
+                tk.Label(root, text="Исследования для открытия").pack()
+                research_parent_entry = ttk.Combobox(
+                    root,
+                    values=CACHE_FILE.get("battery", []),
+                    state="readonly",
+                    width=30
+                )
+                research_parent_entry.pack()
+
+                def save_wall():
+                    name = entry_name.get().strip().replace(" ", "_")
+                    description = entry_desc.get().strip()
+                    parent_value = research_parent_entry.get()
+                    try:
+                        health = int(entry_health.get())
+                        size = int(entry_size.get())
+                        power = int(entry_power.get())
+                        if size > 10 or size < 1:
+                            raise ValueError
+                    except ValueError:
+                        messagebox.showerror("Ошибка", "Введите корректные числа (размер до 10)!")
+                        return
+
+                    if not name or not description:
+                        messagebox.showerror("Ошибка", "Все поля должны быть заполнены!")
+                        return
+
+                    block_data = {
+                        "name": name,
+                        "description": description,
+                        "health": health,
+                        "powerCapacity": power,
+                        "size": size,
+                        "_comment": {
+                            "name": "это имя в игре", 
+                            "description": "это описания в игре", 
+                            "health": "это количество здоровья", 
+                            "size": "это размер, requirements это ресурсы для постройки",
+                            "powerCapacity": "сколько энергии хранит"
+                        },
+                        "category": "power",
+                        "type": "battery",
+                        "requirements": [],
+                        "research": { 
+                            "parent": parent_value,
+                            "requirements": [],
+                            "objectives": []
+                        }
+                    }
+
+                    if name not in CACHE_FILE.get("battery", []):
+                        CACHE_FILE["battery"].append(name)
+
+                    with open(resource_path(os.path.join(mod_folder, "cache.json")), "w", encoding="utf-8") as f:
+
+                        json.dump(CACHE_FILE, f, indent=4, ensure_ascii=False)  # ✅
+
+                    if name_exists_in_content(mod_folder, name, "battery"):
+                        return  # Остановить сохранение
+
+                    open_requirements_editor(name, block_data)
+                
+                tk.Button(root, text="⬅️ Назад", font=0, command=lambda: create_block()).pack(pady=20)
+
+                tk.Button(root, text="💾 Сохранить", bg="#d0ffd0", command=save_wall).pack(pady=20)
 
         # Основное окно
         root = tk.Tk()
