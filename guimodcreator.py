@@ -476,7 +476,6 @@ class MindustryModCreator:
                 ("Создать жидкостный мост (на энергии)", lambda: cb_bridge_liquid_energy_create()),
                 ("Создать руду", lambda: cb_ore_create()),
                 ("Создать бур", lambda: cb_byp_create()),
-                ("Создать батарейку", lambda: cb_battery_create()),
                 ("Назад", lambda: создание_кнопки())
             ]
 
@@ -3097,7 +3096,7 @@ class MindustryModCreator:
                         "description": description,
                         "health": health,
                         "size": size,
-                        "drillTier": hardness,
+                        "tier": hardness,
                         "category": "production",
                         "liquidCapacity": 60,
                         "type": "Drill",
@@ -3112,7 +3111,7 @@ class MindustryModCreator:
                             "description": "Описание в игре",
                             "health": "Здоровье",
                             "size": "Размер блока (в клетках)",
-                            "hardness": "Максимальная твёрдость добываемой руды"
+                            "tier": "Максимальная твёрдость добываемой руды"
                         }
                     }
 
@@ -3129,99 +3128,6 @@ class MindustryModCreator:
 
                 tk.Button(root, text="⬅️ Назад", font=0, command=lambda: create_block()).pack(pady=20)
                 tk.Button(root, text="💾 Сохранить", bg="#d0ffd0", command=save_Drill).pack(pady=20)
-
-            def cb_battery_create():
-                clear_window()
-
-                tk.Label(root, text="Имя Батарейки").pack()
-                entry_name = tk.Entry(root, width=50)
-                entry_name.pack()
-
-                tk.Label(root, text="Описание").pack()
-                entry_desc = tk.Entry(root, width=50)
-                entry_desc.pack()
-
-                tk.Label(root, text="ХП").pack()
-                entry_health = tk.Entry(root, width=10)
-                entry_health.pack()
-
-                tk.Label(root, text="Размер (макс. 10)").pack()
-                entry_size = tk.Entry(root, width=10)
-                entry_size.pack()
-
-                tk.Label(root, text="Хранит энергии").pack()
-                entry_power = tk.Entry(root, width=10)
-                entry_power.pack()
-
-                # ✅ Чтение cache.json
-                with open(resource_path(os.path.join(mod_folder, "cache.json")), "r", encoding="utf-8") as f:
-                    CACHE_FILE = json.load(f)
-
-                tk.Label(root, text="Исследования для открытия").pack()
-                research_parent_entry = ttk.Combobox(
-                    root,
-                    values=CACHE_FILE.get("battery", []),
-                    state="readonly",
-                    width=30
-                )
-                research_parent_entry.pack()
-
-                def save_wall():
-                    name = entry_name.get().strip().replace(" ", "_")
-                    description = entry_desc.get().strip()
-                    parent_value = research_parent_entry.get()
-                    try:
-                        health = int(entry_health.get())
-                        size = int(entry_size.get())
-                        power = int(entry_power.get())
-                        if size > 10 or size < 1:
-                            raise ValueError
-                    except ValueError:
-                        messagebox.showerror("Ошибка", "Введите корректные числа (размер до 10)!")
-                        return
-
-                    if not name or not description:
-                        messagebox.showerror("Ошибка", "Все поля должны быть заполнены!")
-                        return
-
-                    block_data = {
-                        "name": name,
-                        "description": description,
-                        "health": health,
-                        "powerCapacity": power,
-                        "size": size,
-                        "_comment": {
-                            "name": "это имя в игре", 
-                            "description": "это описания в игре", 
-                            "health": "это количество здоровья", 
-                            "size": "это размер, requirements это ресурсы для постройки",
-                            "powerCapacity": "сколько энергии хранит"
-                        },
-                        "category": "power",
-                        "type": "battery",
-                        "requirements": [],
-                        "research": { 
-                            "parent": parent_value,
-                            "requirements": [],
-                            "objectives": []
-                        }
-                    }
-
-                    if name not in CACHE_FILE.get("battery", []):
-                        CACHE_FILE["battery"].append(name)
-
-                    with open(resource_path(os.path.join(mod_folder, "cache.json")), "w", encoding="utf-8") as f:
-
-                        json.dump(CACHE_FILE, f, indent=4, ensure_ascii=False)  # ✅
-
-                    if name_exists_in_content(mod_folder, name, "battery"):
-                        return  # Остановить сохранение
-
-                    open_requirements_editor(name, block_data)
-                
-                tk.Button(root, text="⬅️ Назад", font=0, command=lambda: create_block()).pack(pady=20)
-
-                tk.Button(root, text="💾 Сохранить", bg="#d0ffd0", command=save_wall).pack(pady=20)
 
         # Основное окно
         root = tk.Tk()
