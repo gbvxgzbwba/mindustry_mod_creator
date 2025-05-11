@@ -82,7 +82,8 @@ def load_or_create_cache(mod_folder):
         "bridge-conduit": ["bridge-conduit"],
         "battery": ["battery", "battery-large"],
         "bridge-conduit_enegry": ["phase-conduit"],
-        "Drill": ["mechanical-drill", "pneumatic-drill", "laser-drill", "blast-drill"]
+        "Drill": ["mechanical-drill", "pneumatic-drill", "laser-drill", "blast-drill"],
+        "PowerNode": ["power-node", "power-node-large"]
     }
     path = os.path.join(mod_folder, "cache.json")
     if not os.path.exists(path):
@@ -476,6 +477,7 @@ class MindustryModCreator:
                 ("Создать жидкостный мост (на энергии)", lambda: cb_bridge_liquid_energy_create()),
                 ("Создать руду", lambda: cb_ore_create()),
                 ("Создать бур", lambda: cb_byp_create()),
+                ("Создать энерго узел", lambda: cb_powernode_create()),
                 ("Назад", lambda: создание_кнопки())
             ]
 
@@ -486,6 +488,8 @@ class MindustryModCreator:
 
             #////////////////////////////////////////////////////////////////
             editor = tk.Button(root, text="Редактор JSON", font=0, command=lambda: editor_cb())
+            editor.pack(anchor="nw")
+            editor = tk.Button(root, text="Калькулятор 1:60", font=0, command=lambda: calcylator())
             editor.pack(anchor="nw")
 
             def editor_cb():
@@ -508,7 +512,6 @@ class MindustryModCreator:
                     btn = tk.Button(root, text=folder_name, font=("Arial", 10), width=30, height=2,
                                     command=lambda p=folder_path: open_block_folder(p))
                     btn.pack(pady=3)
-
             def open_block_folder(folder_path):
                 clear_window()
 
@@ -543,7 +546,6 @@ class MindustryModCreator:
                             text="Удалить",
                             command=make_delete_callback(block_name, folder_path)
                         ).pack(side="right")
-
             def delete_block(block_name, folder_path):
                 block_type = os.path.basename(folder_path)
                 json_path = os.path.join(mod_folder, f"content/blocks/{block_type}/{block_name}.json")
@@ -588,7 +590,6 @@ class MindustryModCreator:
 
                 except Exception as e:
                     messagebox.showerror("Ошибка удаления", f"Не удалось удалить: {e}")
-
             def edit_block(block_name, folder_path):
                 path = os.path.join(folder_path, f"{block_name}.json")
 
@@ -621,6 +622,28 @@ class MindustryModCreator:
                         messagebox.showerror("Ошибка", "Неверный JSON.")
 
                 tk.Button(top, text="Сохранить", command=save_changes).pack(pady=5)
+            
+            def calcylator():
+                clear_window()
+
+                tk.Label(root, text="Введите значение:").pack()
+
+                cal_entry = tk.Entry(root, width=20)
+                cal_entry.pack()
+
+                result_label = tk.Label(root, text="")
+                result_label.pack()
+
+                def calcolator_o():
+                    try:
+                        value = int(cal_entry.get())
+                        result = (1 / 60) * value
+                        result_label.config(text=f"Результат: {result:.3f}")
+                    except ValueError:
+                        result_label.config(text="Введите целое число!")
+
+                tk.Button(root, text="Вычислить", command=calcolator_o).pack(pady=10)
+                tk.Button(root, text="⬅️ Назад", command=create_block).pack()
             #////////////////////////////////////////////////////////////
             
             def open_requirements_editor(block_name, block_data):
@@ -3128,6 +3151,119 @@ class MindustryModCreator:
 
                 tk.Button(root, text="⬅️ Назад", font=0, command=lambda: create_block()).pack(pady=20)
                 tk.Button(root, text="💾 Сохранить", bg="#d0ffd0", command=save_Drill).pack(pady=20)
+
+            def cb_powernode_create():
+                clear_window()
+
+                tk.Label(root, text="Имя узла").pack()
+                entry_name = tk.Entry(root, width=50)
+                entry_name.pack()
+
+                tk.Label(root, text="Описание").pack()
+                entry_desc = tk.Entry(root, width=50)
+                entry_desc.pack()
+
+                tk.Label(root, text="ХП").pack()
+                entry_health = tk.Entry(root, width=10)
+                entry_health.pack()
+
+                tk.Label(root, text="Размер (макс. 10)").pack()
+                entry_size = tk.Entry(root, width=10)
+                entry_size.pack()
+
+                tk.Label(root, text="Радиус (макс. 100)").pack()
+                entry_range_1 = tk.Entry(root, width=10)
+                entry_range_1.pack()
+
+                tk.Label(root, text="Подключения (макс. 100)").pack()
+                entry_connect = tk.Entry(root, width=10)
+                entry_connect.pack()
+
+                tk.Label(root, text="Буфер энергии (не знаю что это) (макс. 1.000.000)").pack()
+                entry_buffer = tk.Entry(root, width=10)
+                entry_buffer.pack()
+
+                # ✅ Чтение cache.json
+                with open(resource_path(os.path.join(mod_folder, "cache.json")), "r", encoding="utf-8") as f:
+                    CACHE_FILE = json.load(f)
+
+                tk.Label(root, text="Исследования для открытия").pack()
+                research_parent_entry = ttk.Combobox(
+                    root,
+                    values=CACHE_FILE.get("PowerNode", []),
+                    state="readonly",
+                    width=30
+                )
+                research_parent_entry.pack()
+
+                def save_PowerNode():
+                    name = entry_name.get().strip().replace(" ", "_")
+                    description = entry_desc.get().strip()
+                    parent_value = research_parent_entry.get()
+                    try:
+                        health = int(entry_health.get())
+                        size = int(entry_size.get())
+                        range_entry = float(entry_range_1.get())
+                        maxnodes = int(entry_connect.get())
+                        buffer = int(entry_buffer.get())
+                        if size > 10 or size < 1:
+                            raise ValueError
+                        if maxnodes > 100 or maxnodes < 1:
+                            raise ValueError
+                        if range_entry > 100 or range_entry < 1:
+                            raise ValueError
+                        if buffer > 1000000 or buffer < 1:
+                            raise ValueError
+                        range_1 = range_entry * 8
+                    except ValueError:
+                        messagebox.showerror("Ошибка", "Введите корректные числа!")
+                        return
+
+                    if not name or not description:
+                        messagebox.showerror("Ошибка", "Все поля должны быть заполнены!")
+                        return
+
+                    block_data = {
+                        "name": name,
+                        "description": description,
+                        "health": health,
+                        "size": size,
+                        "_comment": {
+                            "name": "это имя в игре", 
+                            "description": "это описания в игре", 
+                            "health": "это количество здоровья", 
+                            "size": "это размер, requirements это ресурсы для постройки",
+                            "maxnodes": "максимум подключений",
+                            "range": "максимальный радиус (умножать на 8)"
+                        },
+                        "category": "power",
+                        "type": "PowerNode",
+                        "powerBuffer": buffer,
+                        "maxNodes": maxnodes,
+                        "range": range_1,
+                        "requirements": [],
+                        "research": { 
+                            "parent": parent_value,
+                            "requirements": [],
+                            "objectives": []
+                        }
+                    }
+
+                    if name not in CACHE_FILE.get("PowerNode", []):
+                        CACHE_FILE["PowerNode"].append(name)
+
+                    with open(resource_path(os.path.join(mod_folder, "cache.json")), "w", encoding="utf-8") as f:
+
+                        json.dump(CACHE_FILE, f, indent=4, ensure_ascii=False)  # ✅
+
+                    if name_exists_in_content(mod_folder, name, "PowerNode"):
+                        return  # Остановить сохранение
+
+                    open_requirements_editor(name, block_data)
+                
+                tk.Button(root, text="⬅️ Назад", font=0, command=lambda: create_block()).pack(pady=20)
+
+                tk.Button(root, text="💾 Сохранить", bg="#d0ffd0", command=save_PowerNode).pack(pady=20)
 
         # Основное окно
         root = tk.Tk()
