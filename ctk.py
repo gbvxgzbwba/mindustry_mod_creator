@@ -17,13 +17,6 @@ theme_test["CTkButton"] = {
     "hover_color": "#005A00", "border_color": "#005A00",
     "text_color_disabled": "#00F7FF"
 }
-theme_test["CTk"] = {
-    "fg_color": "#303030"
-}
-theme_test["CTkLabel"] = {
-    "text_color": "#FFFFFF", "fg_color": "#202320",
-    "corner_radius": 10
-}
 
 # Настройка темы CTk
 ctk.set_appearance_mode("Dark")  # Режим: "System", "Dark", "Light"
@@ -124,7 +117,6 @@ class MindustryModCreator:
                 return
 
             current_dir = os.path.join("mindustry_mod_creator", "mods")
-            global mod_folder
             mod_folder = os.path.join(current_dir, mod_name)
             os.makedirs(mod_folder, exist_ok=True)
 
@@ -385,7 +377,7 @@ class MindustryModCreator:
                 nav_frame = ctk.CTkFrame(root)
                 nav_frame.pack(pady=10)
                 
-                ctk.CTkButton(nav_frame, text="⬅️ Назад", command=create_block).pack(side="left", padx=5)
+                ctk.CTkButton(nav_frame, text="⬅️ Назад", command=lambda:create_block(mod_name)).pack(side="left", padx=5)
                 
                 # Создаем вкладки для разных типов контента
                 tabs = ctk.CTkTabview(root)
@@ -474,7 +466,7 @@ class MindustryModCreator:
                 block_type = os.path.basename(folder_path)
                 json_path = os.path.join(folder_path, f"{block_name}.json")
                 sprite_folder_path = os.path.join(mod_folder, "sprites", block_type, block_name)
-                cache_path = os.path.join(mod_folder, "cache.json")
+                cache_path = os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")
 
                 try:
                     # Удалить JSON-файл
