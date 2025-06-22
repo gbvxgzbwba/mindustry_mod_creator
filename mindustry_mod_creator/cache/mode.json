@@ -1,0 +1,100 @@
+{
+    "_comment": "Не удаляйте этот фаил он нужен для работы исследования",
+    "wall": [
+        "copper-wall",
+        "copper-wall-large",
+        "titanium-wall",
+        "titanium-wall-large",
+        "plastanium-wall",
+        "plastanium-wall-large",
+        "thorium-wall",
+        "thorium-wall-large",
+        "surge-wall",
+        "surge-wall-large",
+        "phase-wall",
+        "phase-wall-large",
+        "32",
+        "1"
+    ],
+    "SolarGenerator": [
+        "solar-panel",
+        "solar-panel-large",
+        "4"
+    ],
+    "ConsumeGenerator": [
+        "combustion-generator",
+        "steam-generator",
+        "3"
+    ],
+    "StorageBlock": [
+        "container",
+        "vault",
+        "5"
+    ],
+    "GenericCrafter": [
+        "graphite-press",
+        "pyratite-mixer",
+        "blast-mixer",
+        "silicon-smelter",
+        "spore-press",
+        "coal-centrifuge",
+        "multi-press",
+        "silicon-crucible",
+        "plastanium-compressor",
+        "phase-weaver",
+        "kiln",
+        "pulverizer",
+        "melter",
+        "surge-smelter",
+        "separator",
+        "cryofluid-mixer",
+        "disassembler",
+        "6"
+    ],
+    "conveyor": [
+        "conveyor",
+        "titanium-conveyor",
+        "2"
+    ],
+    "conduit": [
+        "conduit",
+        "pulse-conduit",
+        "7",
+        "44"
+    ],
+    "BridgeConveyor": [
+        "bridge-conveyor",
+        "err_t",
+        "7",
+        "8",
+        "43",
+        "3321",
+        "312132",
+        "442",
+        "321312"
+    ],
+    "BridgeConveyorEnergy": [
+        "phase-conveyor"
+    ],
+    "BridgeConduit": [
+        "bridge-conduit"
+    ],
+    "battery": [
+        "battery",
+        "battery-large"
+    ],
+    "BridgeConduitEnergy": [
+        "phase-conduit"
+    ],
+    "Drill": [
+        "mechanical-drill",
+        "pneumatic-drill",
+        "laser-drill",
+        "blast-drill"
+    ],
+    "PowerNode": [
+        "power-node",
+        "power-node-large",
+        "7"
+    ]
+}
