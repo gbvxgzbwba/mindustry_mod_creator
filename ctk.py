@@ -739,6 +739,7 @@ class MindustryModCreator:
                 ]
                 icons_folder = os.path.join("mindustry_mod_creator", "icons")
                 icons_url = "https://raw.githubusercontent.com/Anuken/Mindustry/master/core/assets-raw/sprites/items/"
+                
                 def load_icons():
                     os.makedirs(icons_folder, exist_ok=True)
                     for name in name_icons:
@@ -751,6 +752,7 @@ class MindustryModCreator:
                                 print(f"Успешно: {name}.png")
                             except Exception as e:
                                 print(f"Ошибка загрузки {name}.png: {e}")
+                
                 load_icons()
                 clear_window()
                 
@@ -775,7 +777,7 @@ class MindustryModCreator:
                     print(f"Ошибка загрузки изображения: {e}")
                 
                 ctk.CTkLabel(header_frame, 
-                            text=f"Редактор ресурсов: {block_name} : {block_type}",
+                            text=f"Редактор ресурсов: {block_name}, {block_type}, максимум 70.000",
                             font=("Arial", 18, "bold")).pack(side="left", padx=10)
                 
                 content_frame = ctk.CTkFrame(main_frame, fg_color="#3a3a3a", corner_radius=8)
@@ -837,89 +839,121 @@ class MindustryModCreator:
                     
                     bottom_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
                     bottom_frame.pack(fill="x", pady=(10, 0))
-                    
-                    value = tk.IntVar(value=0)
-                    
-                    def update_value(delta):
-                        new_val = max(0, min(70000, value.get() + delta))
-                        value.set(new_val)
-                    
-                    btn_frame = ctk.CTkFrame(bottom_frame, fg_color="transparent")
-                    btn_frame.pack()
 
+                    int_value = tk.IntVar(value=0)
+                    str_value = tk.StringVar(value="0")
+                    max_value = 70000
+
+                    def sync_values(*args):
+                        try:
+                            val = str_value.get()
+                            int_value.set(int(val) if val else 0)
+                        except:
+                            int_value.set(0)
+                    
+                    str_value.trace_add("write", sync_values)
+                    
+                    def validate_input(new_val):
+                        if new_val == "":
+                            return True
+                        if not new_val.isdigit():
+                            return False
+                        if len(new_val) > 5:
+                            return False
+                        if int(new_val) > max_value:
+                            return False
+                        return True
+                    
+                    validation = parent.register(validate_input)
+                    
+                    controls_frame = ctk.CTkFrame(bottom_frame, fg_color="transparent")
+                    controls_frame.pack(fill="x", pady=5)
+                    
+                    # Настройка grid layout
+                    controls_frame.grid_columnconfigure(0, weight=0, minsize=35)
+                    controls_frame.grid_columnconfigure(1, weight=1, minsize=70)
+                    controls_frame.grid_columnconfigure(2, weight=0, minsize=35)
+                    
                     def update_value(change):
-                        """Обновляет значение в Entry"""
-                        current = int(entry.get())
-                        new_value = max(0, current + change)  # Не даём уйти ниже 0
-                        value.set(new_value)
+                        try:
+                            current = str_value.get()
+                            try:
+                                current_num = int(current) if current else 0
+                            except ValueError:
+                                current_num = 0
+                            new_value = max(0, min(max_value, current_num + change))
+                            str_value.set(str(new_value))
+                        except Exception as e:
+                            str_value.set("0")
 
                     def start_increment(change):
-                        """Запускает непрерывное изменение значения"""
                         global is_pressed
                         is_pressed = True
                         update_value(change)
-                        root.after(100, lambda: repeat_increment(change))  # Повтор через 100 мс
+                        root.after(100, lambda: repeat_increment(change))
 
                     def stop_increment():
-                        """Останавливает изменение при отпускании кнопки"""
                         global is_pressed
                         is_pressed = False
 
                     def repeat_increment(change):
-                        """Повторяет изменение, пока кнопка зажата"""
                         if is_pressed:
                             update_value(change)
-                            root.after(100, lambda: repeat_increment(change))  # Повторяем
+                            root.after(100, lambda: repeat_increment(change))
 
-                    # Кнопка "-" (уменьшение)
                     minus_btn = ctk.CTkButton(
-                        btn_frame,
+                        controls_frame,
                         text="-",
-                        width=40,
-                        height=40,
-                        font=("Arial", 20),
-                        text_color="#ffffff",
+                        width=35,
+                        height=35,
+                        font=("Arial", 16),
                         fg_color="#e62525",
                         hover_color="#701c1c",
                         border_color="#701c1c",
                         corner_radius=6,
+                        anchor="center"
                     )
-                    minus_btn.pack(side="left", padx=5)
-                    minus_btn.bind("<ButtonPress-1>", lambda e: start_increment(-1))  # Зажатие
-                    minus_btn.bind("<ButtonRelease-1>", lambda e: stop_increment())   # Отпускание
+                    minus_btn.grid(row=0, column=0, padx=(0, 5), sticky="nsew")
+                    minus_btn.bind("<ButtonPress-1>", lambda e: start_increment(-1))
+                    minus_btn.bind("<ButtonRelease-1>", lambda e: stop_increment())
 
-                    # Поле ввода (Entry)
                     entry = ctk.CTkEntry(
-                        btn_frame,
-                        width=60,
+                        controls_frame,
+                        width=70,
                         height=35,
                         font=("Arial", 14),
-                        textvariable=value,
+                        textvariable=str_value,
                         fg_color="#BE6F24",
                         border_color="#613e11",
                         justify="center",
-                        state="readonly",
+                        validate="key",
+                        validatecommand=(validation, "%P")
                     )
-                    entry.pack(side="left", padx=5)
+                    entry.grid(row=0, column=1, padx=5, sticky="ew")
 
-                    # Кнопка "+" (увеличение)
                     plus_btn = ctk.CTkButton(
-                        btn_frame,
+                        controls_frame,
                         text="+",
-                        width=40,
-                        height=40,
-                        font=("Arial", 20, "bold"),
-                        text_color="#ffffff",
+                        width=35,
+                        height=35,
+                        font=("Arial", 16),
                         corner_radius=6,
+                        anchor="center"
                     )
-                    plus_btn.pack(side="left", padx=5)
-                    plus_btn.bind("<ButtonPress-1>", lambda e: start_increment(1))  # Зажатие
-                    plus_btn.bind("<ButtonRelease-1>", lambda e: stop_increment())  # Отпускание
+                    plus_btn.grid(row=0, column=2, padx=(5, 0), sticky="nsew")
+                    plus_btn.bind("<ButtonPress-1>", lambda e: start_increment(1))
+                    plus_btn.bind("<ButtonRelease-1>", lambda e: stop_increment())
+                    
+                    def handle_focus_out(event):
+                        if str_value.get() == "":
+                            str_value.set("0")
+                    
+                    entry.bind("<FocusOut>", handle_focus_out)
                     
                     if is_mod_item:
-                        mod_item_entries[item] = value
+                        mod_item_entries[item] = int_value
                     else:
-                        default_item_entries[item] = value
+                        default_item_entries[item] = int_value
                     
                     return card_frame
                 
@@ -1004,22 +1038,6 @@ class MindustryModCreator:
                 btn_frame = ctk.CTkFrame(footer_frame, fg_color="transparent")
                 btn_frame.pack(expand=True, pady=15)
                 
-                ctk.CTkButton(btn_frame, 
-                            text="Сохранить", 
-                            width=140, 
-                            height=45,
-                            font=("Arial", 14),
-                            command=lambda: save_requirements()).pack(side="left", padx=20)
-                
-                ctk.CTkButton(btn_frame, 
-                            text="Отмена", 
-                            width=140, 
-                            height=45,
-                            font=("Arial", 14),
-                            fg_color="#e62525", 
-                            hover_color="#701c1c", border_color="#701c1c",
-                            command=lambda: создание_кнопки()).pack(side="left", padx=20)
-                
                 def save_requirements():
                     requirements = []
                     
@@ -1048,26 +1066,27 @@ class MindustryModCreator:
                         with open(block_path, "w", encoding="utf-8") as f:
                             json.dump(block_data, f, indent=4, ensure_ascii=False)
                         
-                        try:
-                            size = block_data.get("size", 1)
-                            texture_url = f"https://raw.githubusercontent.com/gbvxgzbwba/texture123/main/block-{size}.png"
-                            sprite_folder = os.path.join("mindustry_mod_creator", "mods", mod_name, "sprites", "blocks", f"{block_type}")
-                            os.makedirs(sprite_folder, exist_ok=True)
-                            
-                            texture_path = os.path.join(sprite_folder, f"{block_name}.png")
-                            
-                            if not os.path.exists(texture_path):
-                                urllib.request.urlretrieve(texture_url, texture_path)
-                                print(f"Текстура успешно загружена: {texture_path}")
-                            
-                        except Exception as e:
-                            print(f"Ошибка при загрузке текстуры: {e}")
-                        
                         messagebox.showinfo("Успех", f"Требования для блока '{block_name}' успешно сохранены!")
                         создание_кнопки()
                     
                     except Exception as e:
                         messagebox.showerror("Ошибка", f"Не удалось сохранить требования: {str(e)}")
+                
+                ctk.CTkButton(btn_frame, 
+                            text="Сохранить", 
+                            width=140, 
+                            height=45,
+                            font=("Arial", 14),
+                            command=save_requirements).pack(side="left", padx=20)
+                
+                ctk.CTkButton(btn_frame, 
+                            text="Отмена", 
+                            width=140, 
+                            height=45,
+                            font=("Arial", 14),
+                            fg_color="#e62525", 
+                            hover_color="#701c1c", border_color="#701c1c",
+                            command=создание_кнопки).pack(side="left", padx=20)
 
             def open_requirements_editor_conveyor(block_name, block_data):
                 clear_window()
