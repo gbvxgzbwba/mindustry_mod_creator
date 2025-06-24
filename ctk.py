@@ -978,7 +978,8 @@ class MindustryModCreator:
                     for i, item in enumerate(items):
                         row = i // columns
                         col = i % columns
-                        card = create_item_card(items_frame, item)
+                        is_mod_item = item in mod_items
+                        card = create_item_card(items_frame, item, is_mod_item)
                         if card_width == -1:
                             card.configure(width=container_width - 20)
                         else:
@@ -994,43 +995,23 @@ class MindustryModCreator:
                     else:
                         scrollbar.pack(side="right", fill="y")
                 
-                tabview = ctk.CTkTabview(content_frame, fg_color="#3a3a3a")
-                tabview.pack(fill="both", expand=True, padx=10, pady=10)
-                
-                tab_default = tabview.add("Стандартные")
-                
-                canvas = tk.Canvas(tab_default, bg="#3a3a3a", highlightthickness=0)
-                scrollbar = ctk.CTkScrollbar(tab_default, orientation="vertical", command=canvas.yview)
+                # Создаем один скроллируемый контейнер для всех предметов
+                canvas = tk.Canvas(content_frame, bg="#3a3a3a", highlightthickness=0)
+                scrollbar = ctk.CTkScrollbar(content_frame, orientation="vertical", command=canvas.yview)
                 canvas.configure(yscrollcommand=scrollbar.set)
                 
                 scrollbar.pack(side="right", fill="y")
-                canvas.pack(side="left", fill="both", expand=True)
+                canvas.pack(side="left", fill="both", expand=True, padx=10, pady=10)
                 
                 items_frame = ctk.CTkFrame(canvas, fg_color="#3a3a3a")
                 canvas.create_window((0, 0), window=items_frame, anchor="nw")
                 
-                update_grid(canvas, items_frame, default_items)
+                # Объединяем все предметы в один список
+                all_items = default_items + mod_items
+                update_grid(canvas, items_frame, all_items)
                 
-                canvas.bind("<Configure>", lambda e: update_grid(canvas, items_frame, default_items))
+                canvas.bind("<Configure>", lambda e: update_grid(canvas, items_frame, all_items))
                 items_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-                
-                if mod_items:
-                    tab_mod = tabview.add("Модовые")
-                    
-                    mod_canvas = tk.Canvas(tab_mod, bg="#3a3a3a", highlightthickness=0)
-                    mod_scrollbar = ctk.CTkScrollbar(tab_mod, orientation="vertical", command=mod_canvas.yview)
-                    mod_canvas.configure(yscrollcommand=mod_scrollbar.set)
-                    
-                    mod_scrollbar.pack(side="right", fill="y")
-                    mod_canvas.pack(side="left", fill="both", expand=True)
-                    
-                    mod_items_frame = ctk.CTkFrame(mod_canvas, fg_color="#3a3a3a")
-                    mod_canvas.create_window((0, 0), window=mod_items_frame, anchor="nw")
-                    
-                    update_grid(mod_canvas, mod_items_frame, mod_items)
-                    
-                    mod_canvas.bind("<Configure>", lambda e: update_grid(mod_canvas, mod_items_frame, mod_items))
-                    mod_items_frame.bind("<Configure>", lambda e: mod_canvas.configure(scrollregion=mod_canvas.bbox("all")))
                 
                 footer_frame = ctk.CTkFrame(main_frame, height=70, fg_color="#3a3a3a", corner_radius=8)
                 footer_frame.pack(fill="x", pady=(15, 0))
@@ -1061,6 +1042,19 @@ class MindustryModCreator:
                         block_type = block_data.get("type")
                         content_folder = os.path.join("mindustry_mod_creator", "mods", mod_name, "content", "blocks", block_type)
                         os.makedirs(content_folder, exist_ok=True)
+                        
+                        size = block_data.get("size", 1)
+                        texture_url = f"https://github.com/gbvxgzbwba/texture123/raw/main/block-{size}.png"
+                        texture_folder = os.path.join("mindustry_mod_creator", "mods", mod_name, "sprites", block_type)
+                        os.makedirs(texture_folder, exist_ok=True)
+                        texture_path = os.path.join(texture_folder, f"{block_name}.png")
+                        
+                        if not os.path.exists(texture_path):
+                            try:
+                                urllib.request.urlretrieve(texture_url, texture_path)
+                                print(f"Текстура автоматически загружена: {texture_url}")
+                            except Exception as e:
+                                print(f"Ошибка загрузки текстуры: {e}")
                         
                         block_path = os.path.join(content_folder, f"{block_name}.json")
                         with open(block_path, "w", encoding="utf-8") as f:
