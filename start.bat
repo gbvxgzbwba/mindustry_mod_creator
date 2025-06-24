@@ -20,7 +20,7 @@ python -m pip install --upgrade pip >nul 2>&1
 
 :: Устанавливаем необходимые библиотеки
 echo Устанавливаем необходимые библиотеки...
-pip install customtkinter >nul 2>&1
+pip install customtkinter pillow
 
 :: Запускаем приложение
 echo Запуск Mindustry Mod Creator...

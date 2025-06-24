@@ -450,6 +450,10 @@ class MindustryModCreator:
         def create_block(mod_name):
             global mod_folder
             mod_folder = os.path.join("mindustry_mod_creator", "mods", f"{mod_name}")
+
+            icons = os.path.join("mindustry_mod_creator", "icons")
+            os.makedirs(icons, exist_ok=True)
+
             clear_window()
             # Устанавливаем серый фон
             root.configure(fg_color="#3F3D3D")
@@ -728,6 +732,26 @@ class MindustryModCreator:
                 ctk.CTkButton(button_frame, text="Отмена", command=top.destroy).pack(side="left", padx=5)
 
             def open_requirements_editor(block_name, block_data):
+                name_icons = [
+                    "copper", "lead", "metaglass", "graphite", "sand", "coal",
+                    "titanium", "thorium", "scrap", "silicon", "plastanium",
+                    "phase-fabric", "surge-alloy", "spore-pod", "blast-compound", "pyratite"
+                ]
+                icons_folder = os.path.join("mindustry_mod_creator", "icons")
+                icons_url = "https://raw.githubusercontent.com/Anuken/Mindustry/master/core/assets-raw/sprites/items/"
+                def load_icons():
+                    os.makedirs(icons_folder, exist_ok=True)
+                    for name in name_icons:
+                        url_icon_folder = f"{icons_url}item-{name}.png"
+                        save_icon = os.path.join(icons_folder, f"{name}.png")
+                        if not os.path.exists(save_icon):
+                            try:
+                                print(f"Скачиваю: {name}.png...")
+                                urllib.request.urlretrieve(url_icon_folder, save_icon)
+                                print(f"Успешно: {name}.png")
+                            except Exception as e:
+                                print(f"Ошибка загрузки {name}.png: {e}")
+                load_icons()
                 clear_window()
                 
                 root.configure(fg_color="#2b2b2b")
@@ -760,7 +784,8 @@ class MindustryModCreator:
                 def load_item_icon(item_name):
                     icon_paths = [
                         os.path.join(mod_folder, "sprites", "items", f"{item_name}.png"),
-                        os.path.join("mindustry_mod_creator", "sprites", "items", f"{item_name}.png")
+                        os.path.join("mindustry_mod_creator", "sprites", "items", f"{item_name}.png"),
+                        os.path.join("mindustry_mod_creator", "icons", f"{item_name}.png")
                     ]
                     for path in icon_paths:
                         if os.path.exists(path):
