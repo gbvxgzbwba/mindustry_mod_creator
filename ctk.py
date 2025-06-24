@@ -1026,7 +1026,7 @@ class MindustryModCreator:
                         try:
                             size = block_data.get("size", 1)
                             texture_url = f"https://raw.githubusercontent.com/gbvxgzbwba/texture123/main/block-{size}.png"
-                            sprite_folder = os.path.join("mindustry_mod_creator", "mods", mod_name, "sprites", "blocks", block_name)
+                            sprite_folder = os.path.join("mindustry_mod_creator", "mods", mod_name, "sprites", "blocks", f"{block_type}")
                             os.makedirs(sprite_folder, exist_ok=True)
                             
                             texture_path = os.path.join(sprite_folder, f"{block_name}.png")
