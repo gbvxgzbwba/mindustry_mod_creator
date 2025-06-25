@@ -1005,6 +1005,12 @@ class MindustryModCreator:
                 
                 items_frame = ctk.CTkFrame(canvas, fg_color="#3a3a3a")
                 canvas.create_window((0, 0), window=items_frame, anchor="nw")
+
+                def on_mousewhell(event):
+                    canvas.yview_scroll(int(-1*(event.delta/120)),"units")
+                canvas.bind_all("<MouseWheel>", on_mousewhell)
+                canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
+                canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
                 
                 # Объединяем все предметы в один список
                 all_items = default_items + mod_items
@@ -1018,6 +1024,8 @@ class MindustryModCreator:
                 
                 btn_frame = ctk.CTkFrame(footer_frame, fg_color="transparent")
                 btn_frame.pack(expand=True, pady=15)
+
+                
                 
                 def save_requirements():
                     requirements = []
