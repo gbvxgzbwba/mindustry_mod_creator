@@ -1990,7 +1990,6 @@ class MindustryModCreator:
                         messagebox.showerror("Ошибка", f"Не удалось сохранить предметы: {str(e)}")
                 
                 def skip_items():
-                    messagebox.showwarning("Предупреждение", "Вы не добавили предмет")
                     open_liquid_GenericCrafter_editor(block_name, block_data)
                 
                 ctk.CTkButton(btn_frame, 
@@ -2318,7 +2317,7 @@ class MindustryModCreator:
                 
                 def skip_liquids():
                     if not block_data["consumes"].get("items"):
-                        messagebox.showerror("Предупреждение", "Вы не добавили предмет, нельзя пропустить жидкость")
+                        messagebox.showerror("Ошибка", "Вы не добавили предмет, нельзя пропустить жидкость")
                     if block_data["consumes"].get("items"):
                         open_item_GenericCrafter_editor_out(block_name, block_data)
                 
@@ -2644,7 +2643,6 @@ class MindustryModCreator:
                         messagebox.showerror("Ошибка", f"Не удалось сохранить предметы: {str(e)}")
                 
                 def skip_items():
-                    messagebox.showwarning("Предупреждение", "Вы не добавили предмет")
                     open_liquid_GenericCrafter_editor_out(block_name, block_data)
                 
                 ctk.CTkButton(btn_frame, 
@@ -2972,9 +2970,8 @@ class MindustryModCreator:
                 
                 def skip_liquids():
                     if not block_data.get("outputItems"):
-                        messagebox.showerror("Предупреждение", "Вы не добавили предмет, нельзя пропустить жидкость")
+                        messagebox.showerror("Ошибка", "Вы не добавили предмет, нельзя пропустить жидкость")
                     if block_data.get("outputItems"):
-                        messagebox.showwarning("Предупреждение", "Вы пропустилиь жидкость")
                         open_requirements_editor(block_name, block_data)
                 
                 ctk.CTkButton(btn_frame, 
@@ -3696,10 +3693,6 @@ class MindustryModCreator:
                         messagebox.showerror("Ошибка", f"Не удалось сохранить предметы: {str(e)}")
                 
                 def skip_items():
-                    # Проверяем, есть ли хотя бы что-то в потребляемых жидкостях
-                    if not block_data["consumes"].get("liquids"):
-                        messagebox.showerror("Ошибка", "Должно быть хотя бы что-то одно: предметы ИЛИ жидкости!")
-                        return
                     open_liquid_consumes_editor(block_name, block_data)
                 
                 ctk.CTkButton(btn_frame, 
@@ -3800,7 +3793,7 @@ class MindustryModCreator:
                     bottom_frame.pack(fill="x", pady=(10, 0))
 
                     float_value = tk.DoubleVar(value=0.0)
-                    str_value = tk.StringVar(value="1")
+                    str_value = tk.StringVar(value="0")
                     max_value = 50.0
 
                     def sync_values(*args):
@@ -4029,9 +4022,8 @@ class MindustryModCreator:
                 def skip_liquids():
                     # Проверяем, есть ли хотя бы что-то в потребляемых предметах
                     if not block_data["consumes"].get("items"):
-                        messagebox.showerror("Ошибка", "Должно быть хотя бы что-то одно: предметы ИЛИ жидкости!")
+                        messagebox.showerror("Ошибка", "Если пропустиил предмет добавте жидкость")
                         return
-                    open_requirements_editor(block_name, block_data)
                 
                 ctk.CTkButton(btn_frame, 
                             text="Сохранить", 
