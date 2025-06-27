@@ -1042,7 +1042,7 @@ class MindustryModCreator:
                             fg_color="#e62525", 
                             hover_color="#701c1c", 
                             border_color="#701c1c",
-                            command=lambda: open_block_folder(folder_path)).pack(side="left", padx=20)
+                            command=lambda: open_block_folder_research(folder_path)).pack(side="left", padx=20)
 
             #///////
             canvas = ctk.CTkCanvas(left_frame, bg="#2b2b2b", highlightthickness=0)
