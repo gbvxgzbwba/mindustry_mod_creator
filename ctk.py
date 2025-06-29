@@ -106,7 +106,10 @@ def load_or_create_cache(mod_name):
         "PowerNode": ["power-node", "power-node-large"],
         "router": ["Router", "Distributor"],
         "Junction": ["Junction"],
-        "Unloader": ["Unloader"]
+        "Unloader": ["Unloader"],
+        "liquid_router": ["liquid-router"],
+        "Liquid_Junction": ["Liquid-Junction"],
+        "LiquidTank": ["liquid-tank"]
     }
     path = os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")
 
@@ -539,7 +542,10 @@ class MindustryModCreator:
                         "https://raw.githubusercontent.com/Anuken/Mindustry/master/core/assets-raw/sprites/blocks/",
                         {
                             "copper-wall": "walls/copper-wall.png",
+                            #"liquid-tank": "liquid/liquid-tank.png",
+                            "liquid-router": "liquid/liquid-router.png",
                             "unloader": "storage/unloader.png",
+                            "liquid-junction": "liquid/liquid-junction.png",
                             "router": "distribution/router.png",
                             "junction": "distribution/junction.png",
                             "titanium-conveyor-0-0": "distribution/conveyors/titanium-conveyor-0-0.png",
@@ -1073,7 +1079,9 @@ class MindustryModCreator:
                 ("Энергоузел", "power-node.png", lambda: cb_powernode_create()),
                 ("Роутер", "router.png", lambda: cb_router_create()),
                 ("Перекрёсток", "junction.png", lambda: cb_Junction_create()),
-                ("Разгрушик", "unloader.png", lambda: cb_unloader_create())
+                ("Разгрушик", "unloader.png", lambda: cb_unloader_create()),
+                ("Роутер жидкости", "liquid-router.png", lambda: cb_liquid_router_create()),
+                ("Перекрёсток жидкости", "liquid-junction.png", lambda: cb_liquid_Junction_create())
             ]
 
             blocks_container = ctk.CTkFrame(scrollable_frame, fg_color="transparent")
@@ -1598,8 +1606,6 @@ class MindustryModCreator:
                 
                 btn_frame = ctk.CTkFrame(footer_frame, fg_color="transparent")
                 btn_frame.pack(expand=True, pady=15)
-
-                
                 
                 def save_requirements():
                     requirements = []
@@ -4905,7 +4911,7 @@ class MindustryModCreator:
                 ctk.CTkButton(root, text="⬅️ Назад", command=lambda: create_block(mod_name)).pack(pady=20)
 
                 ctk.CTkButton(root, text="💾 Сохранить", command=save_StorageBlock).pack(pady=20)
- 
+
             def cb_conduit_create():
                 clear_window()
 
@@ -5235,7 +5241,7 @@ class MindustryModCreator:
                     name = entry_name.get().strip().replace(" ", "_")
                     description = entry_desc.get().strip()
                     parent_value = research_parent_entry.get()
-                    itemCapacity = entry_itemCapacity.get()
+                    itemCapacity = int(entry_itemCapacity.get())
                     try:
                         health = int(entry_health.get())
                         speed1 = int(entry_speed.get())
@@ -5263,7 +5269,6 @@ class MindustryModCreator:
                         "size": 1,
                         "itemCapacity": itemCapacity,
                         "speed": speed,
-                        "displaySpeed": speed,
                         "category": "distribution",
                         "type": "Router",
                         "requirements": [],
@@ -5280,7 +5285,7 @@ class MindustryModCreator:
                     with open(resource_path(os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")), "w", encoding="utf-8") as f:
                         json.dump(CACHE_FILE, f, indent=4, ensure_ascii=False)
 
-                    if name_exists_in_content(mod_folder, name, "router"):
+                    if name_exists_in_content(mod_folder, name, "Router"):
                         return  # Остановить сохранение
 
                     open_requirements_editor(name, router_data)
@@ -5328,7 +5333,7 @@ class MindustryModCreator:
                     name = entry_name.get().strip().replace(" ", "_")
                     description = entry_desc.get().strip()
                     parent_value = research_parent_entry.get()
-                    itemCapacity = entry_itemCapacity.get()
+                    itemCapacity = int(entry_itemCapacity.get())
                     try:
                         health = int(entry_health.get())
                         speed1 = int(entry_speed.get())
@@ -5356,7 +5361,6 @@ class MindustryModCreator:
                         "size": 1,
                         "capacity": itemCapacity,
                         "speed": speed,
-                        "displaySpeed": speed,
                         "category": "distribution",
                         "type": "Junction",
                         "requirements": [],
@@ -5441,7 +5445,6 @@ class MindustryModCreator:
                         "health": health,
                         "size": 1,
                         "speed": speed,
-                        "displaySpeed": speed,
                         "category": "distribution",
                         "type": "Unloader",
                         "requirements": [],
@@ -5465,6 +5468,160 @@ class MindustryModCreator:
 
                 ctk.CTkButton(root, text="⬅️ Назад", command=lambda: create_block(mod_name)).pack(pady=20)
                 ctk.CTkButton(root, text="💾 Сохранить", command=save_Unloader).pack(pady=20)
+     
+            def cb_liquid_router_create():
+                clear_window()
+
+                ctk.CTkLabel(root, text="Имя Роутера").pack()
+                entry_name = ctk.CTkEntry(root, width=350)
+                entry_name.pack()
+
+                ctk.CTkLabel(root, text="Описание").pack()
+                entry_desc = ctk.CTkEntry(root, width=350)
+                entry_desc.pack()
+
+                ctk.CTkLabel(root, text="ХП (макс. 500.000)").pack()
+                entry_health = ctk.CTkEntry(root, width=150)
+                entry_health.pack()
+
+                ctk.CTkLabel(root, text="Вместимоть (макс. 25)").pack()
+                entry_itemCapacity = ctk.CTkEntry(root, width=150)
+                entry_itemCapacity.pack()
+
+                # Чтение cache.json
+                with open(resource_path(os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")), "r", encoding="utf-8") as f:
+                    CACHE_FILE = json.load(f)
+
+                ctk.CTkLabel(root, text="Исследования для открытия").pack()
+                research_parent_entry = ctk.CTkComboBox(
+                    root,
+                    values=CACHE_FILE.get("liquid_router", []),
+                    state="readonly",
+                    width=250
+                )
+                research_parent_entry.pack()
+
+                def save_router():
+                    name = entry_name.get().strip().replace(" ", "_")
+                    description = entry_desc.get().strip()
+                    parent_value = research_parent_entry.get()
+                    itemCapacity = int(entry_itemCapacity.get())
+                    try:
+                        health = int(entry_health.get())
+                        if health > 500000 or health < 1:
+                             raise ValueError
+                        if itemCapacity > 25 or itemCapacity < 1:
+                            raise ValueError
+                    except ValueError:
+                        messagebox.showerror("Ошибка", "Введите корректные числа!")
+                        return
+
+                    if not name or not description:
+                        messagebox.showerror("Ошибка", "Все поля должны быть заполнены!")
+                        return
+
+                    router_data = {
+                        "name": name,
+                        "description": description,
+                        "health": health,
+                        "size": 1,
+                        "liquidCapacity": itemCapacity,
+                        "category": "liquid",
+                        "type": "LiquidRouter",
+                        "requirements": [],
+                        "research": {
+                            "parent": parent_value,
+                            "requirements": [],
+                            "objectives": []
+                        }
+                    }
+
+                    if name not in CACHE_FILE.get("liquid_router", []):
+                        CACHE_FILE["liquid_router"].append(name)
+
+                    with open(resource_path(os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")), "w", encoding="utf-8") as f:
+                        json.dump(CACHE_FILE, f, indent=4, ensure_ascii=False)
+
+                    if name_exists_in_content(mod_folder, name, "LiquidRouter"):
+                        return  # Остановить сохранение
+
+                    open_requirements_editor(name, router_data)
+
+                ctk.CTkButton(root, text="⬅️ Назад", command=lambda: create_block(mod_name)).pack(pady=20)
+                ctk.CTkButton(root, text="💾 Сохранить", command=save_router).pack(pady=20)
+
+            def cb_liquid_Junction_create():
+                clear_window()
+
+                ctk.CTkLabel(root, text="Имя перекрёстка").pack()
+                entry_name = ctk.CTkEntry(root, width=350)
+                entry_name.pack()
+
+                ctk.CTkLabel(root, text="Описание").pack()
+                entry_desc = ctk.CTkEntry(root, width=350)
+                entry_desc.pack()
+
+                ctk.CTkLabel(root, text="ХП (макс. 500.000)").pack()
+                entry_health = ctk.CTkEntry(root, width=150)
+                entry_health.pack()
+
+                # Чтение cache.json
+                with open(resource_path(os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")), "r", encoding="utf-8") as f:
+                    CACHE_FILE = json.load(f)
+
+                ctk.CTkLabel(root, text="Исследования для открытия").pack()
+                research_parent_entry = ctk.CTkComboBox(
+                    root,
+                    values=CACHE_FILE.get("Liquid_Junction", []),
+                    state="readonly",
+                    width=250
+                )
+                research_parent_entry.pack()
+
+                def save_Junction():
+                    name = entry_name.get().strip().replace(" ", "_")
+                    description = entry_desc.get().strip()
+                    parent_value = research_parent_entry.get()
+                    try:
+                        health = int(entry_health.get())
+                        if health > 500000 or health < 1:
+                             raise ValueError
+                    except ValueError:
+                        messagebox.showerror("Ошибка", "Введите корректные числа!")
+                        return
+
+                    if not name or not description:
+                        messagebox.showerror("Ошибка", "Все поля должны быть заполнены!")
+                        return
+
+                    Junction_data = {
+                        "name": name,
+                        "description": description,
+                        "health": health,
+                        "size": 1,
+                        "category": "liquid",
+                        "type": "LiquidJunction",
+                        "requirements": [],
+                        "research": {
+                            "parent": parent_value,
+                            "requirements": [],
+                            "objectives": []
+                        }
+                    }
+
+                    if name not in CACHE_FILE.get("Liquid_Junction", []):
+                        CACHE_FILE["Liquid_Junction"].append(name)
+
+                    with open(resource_path(os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")), "w", encoding="utf-8") as f:
+                        json.dump(CACHE_FILE, f, indent=4, ensure_ascii=False)
+
+                    if name_exists_in_content(mod_folder, name, "LiquidJunction"):
+                        return  # Остановить сохранение
+
+                    open_requirements_editor(name, Junction_data)
+
+                ctk.CTkButton(root, text="⬅️ Назад", command=lambda: create_block(mod_name)).pack(pady=20)
+                ctk.CTkButton(root, text="💾 Сохранить", command=save_Junction).pack(pady=20)
 
         # Создание главного окна 
         root = ctk.CTk()
