@@ -156,6 +156,26 @@ class MindustryModCreator:
             else:
                 open_mod_editor(mod_folder, load_existing=False)
 
+        def setup_mod_json_auto():
+            global mod_name
+            mod_name = entry_name.get().strip()
+            if not mod_name:
+                messagebox.showerror("Ошибка", "Введите название папки!")
+                return
+
+            current_dir = os.path.join("mindustry_mod_creator", "mods")
+            global mod_folder
+            mod_folder = os.path.join(current_dir, mod_name)
+            os.makedirs(mod_folder, exist_ok=True)
+
+            cache_data = load_or_create_cache(mod_name)
+            mod_json_path = os.path.join(mod_folder, "mod.json")
+
+            if os.path.exists(mod_json_path):
+                    создание_кнопки()
+            else:
+                open_mod_editor(mod_folder, load_existing=False)
+
         def clear_window():
             for widget in root.winfo_children():
                 widget.destroy()
@@ -245,25 +265,88 @@ class MindustryModCreator:
             создание_кнопки()
 
         def создание_кнопки():
-            """Окно с кнопками для создания новых объектов"""
-            clear_window()
+            """Главное меню с просмотром контента"""
+            
+            def delete_item(item, content_type):
+                """Удаление элемента с подтверждением"""
+                # Определяем путь к текстуре
+                if content_type == "blocks":
+                    sprite_path = os.path.join(mod_folder, "sprites", "blocks", item["type"], f"{item['name']}.png")
+                else:
+                    sprite_path = os.path.join(mod_folder, "sprites", content_type, f"{item['name']}.png")
+                
+                # Сообщение с подтверждением
+                confirm_msg = f"Вы уверены, что хотите удалить {content_type[:-1]} '{item['name']}'?\n\n"
+                confirm_msg += f"Файл: {item['full_path']}\n"
+                confirm_msg += f"Текстура: {sprite_path}" if os.path.exists(sprite_path) else "Текстура не найдена"
+                
+                if not messagebox.askyesno("Подтверждение удаления", confirm_msg):
+                    return
+                
+                try:
+                    # Удаляем JSON файл
+                    if os.path.exists(item["full_path"]):
+                        os.remove(item["full_path"])
+                    
+                    # Удаляем текстуру, если она существует
+                    texture_deleted = False
+                    if os.path.exists(sprite_path):
+                        os.remove(sprite_path)
+                        texture_deleted = True
+                    
+                    # Сообщение о результате
+                    result_msg = f"{content_type[:-1]} '{item['name']}' успешно удален"
+                    if texture_deleted:
+                        result_msg += "\nТекстура также была удалена"
+                    else:
+                        result_msg += "\nТекстура не была найдена"
+                    
+                    messagebox.showinfo("Успех", result_msg)
+                    # Обновляем интерфейс
+                    создание_кнопки()
+                    
+                except Exception as e:
+                    messagebox.showerror("Ошибка", f"Не удалось удалить: {str(e)}")
 
-            # Заголовок
-            label = ctk.CTkLabel(root, text="Что вы хотите добавить?", font=("Arial", 16, "bold"))
-            label.pack(pady=(40, 20))
-
-            # Контейнер для кнопок
-            button_frame = ctk.CTkFrame(root)
-            button_frame.pack(pady=10)
-
-            # Кнопки
-            buttons = [
-                ("📦 Создать предмет 📦", create_item_window),
-                ("💧 Создать жидкость 💧", create_liquid_window),
-                ("🧱 Создать блок 🧱", lambda:create_block(mod_name)),
-                ("📁 Создать Zip 🔨", lambda:create_zip()),
-                ("📁 Открыть папку мода 📁", lambda:open_mod_folder())
-            ]
+            def edit_item_json(json_path):
+                """Редактирование JSON файла"""
+                if not os.path.exists(json_path):
+                    messagebox.showerror("Ошибка", f"Файл не найден: {json_path}")
+                    return
+                
+                with open(json_path, "r", encoding="utf-8") as f:
+                    try:
+                        data = json.load(f)
+                    except json.JSONDecodeError:
+                        messagebox.showerror("Ошибка", "Некорректный JSON файл")
+                        return
+                
+                # Создаем окно редактора
+                editor = ctk.CTkToplevel(root)
+                editor.title(f"Редактор {os.path.basename(json_path)}")
+                editor.geometry("800x600")
+                
+                text_frame = ctk.CTkFrame(editor)
+                text_frame.pack(fill="both", expand=True, padx=10, pady=10)
+                
+                text = ctk.CTkTextbox(text_frame, font=("Consolas", 12))
+                text.pack(fill="both", expand=True)
+                text.insert("1.0", json.dumps(data, indent=4, ensure_ascii=False))
+                
+                button_frame = ctk.CTkFrame(editor)
+                button_frame.pack(pady=10)
+                
+                def save_changes():
+                    try:
+                        new_data = json.loads(text.get("1.0", tk.END))
+                        with open(json_path, "w", encoding="utf-8") as f:
+                            json.dump(new_data, f, indent=4, ensure_ascii=False)
+                        messagebox.showinfo("Успех", "Изменения сохранены")
+                    except Exception as e:
+                        messagebox.showerror("Ошибка", f"Не удалось сохранить: {str(e)}")
+                
+                ctk.CTkButton(button_frame, text="Сохранить", command=save_changes).pack(side="left", padx=5)
+                ctk.CTkButton(button_frame, text="Отмена", command=editor.destroy).pack(side="left", padx=5)
 
             def open_mod_folder():
                 mods_folder = os.path.join("mindustry_mod_creator", "mods", f"{mod_name}")
@@ -309,10 +392,195 @@ class MindustryModCreator:
                     messagebox.showerror("Ошибка", f"Не удалось создать архив:\n{str(e)}")
                     return None
 
-            for i, (text, cmd) in enumerate(buttons):
-                btn = ctk.CTkButton(button_frame, text=text, command=cmd, width=250, height=40,
-                                  font=("Arial", 12))
-                btn.grid(row=i, column=0, pady=8)
+            global mod_folder
+            mod_folder = os.path.join("mindustry_mod_creator", "mods", f"{mod_name}")
+            
+            clear_window()
+            root.configure(fg_color="#2b2b2b")
+
+            # Основной контейнер
+            main_frame = ctk.CTkFrame(root, fg_color="transparent")
+            main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+            # Левая панель с кнопками действий
+            left_panel = ctk.CTkFrame(main_frame, width=200, fg_color="#3a3a3a", corner_radius=8)
+            left_panel.pack(side="left", fill="y", padx=(0, 10))
+            left_panel.pack_propagate(False)
+
+            # Кнопки в левой панели
+            action_buttons = [
+                ("📦 Создать предмет", create_item_window),
+                ("💧 Создать жидкость", create_liquid_window),
+                ("🧱 Создать блок", lambda: create_block(mod_name)),
+                ("📁 Создать ZIP", create_zip),
+                ("📂 Открыть папку", open_mod_folder)
+            ]
+
+            for text, cmd in action_buttons:
+                btn = ctk.CTkButton(
+                    left_panel,
+                    text=text,
+                    width=180,
+                    height=40,
+                    font=("Arial", 14),
+                    anchor="w",
+                    command=cmd
+                )
+                btn.pack(pady=5, padx=10, fill="x")
+
+            # Основная область с контентом
+            content_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+            content_frame.pack(side="right", fill="both", expand=True)
+
+            # Вкладки для разных типов контента
+            tabs = ctk.CTkTabview(content_frame)
+            tabs.pack(fill="both", expand=True)
+            
+            # Создаем вкладки
+            tabs.add("Блоки")
+            tabs.add("Предметы") 
+            tabs.add("Жидкости")
+
+            # Функция для загрузки и отображения контента
+            def load_content(tab_name, content_type):
+                tab = tabs.tab(tab_name)
+                
+                # Основной контейнер без отступов
+                main_frame = ctk.CTkFrame(tab, fg_color="#2b2b2b")
+                main_frame.pack(fill="both", expand=True, padx=0, pady=0)
+
+                # Настройка скроллинга
+                canvas = tk.Canvas(main_frame, bg="#2b2b2b", highlightthickness=0)
+                scrollbar = ctk.CTkScrollbar(main_frame, command=canvas.yview)
+                canvas.configure(yscrollcommand=scrollbar.set)
+                
+                scrollbar.pack(side="right", fill="y")
+                canvas.pack(side="left", fill="both", expand=True, padx=0, pady=0)
+
+                # Контейнер для карточек
+                content_frame = ctk.CTkFrame(canvas, fg_color="#2b2b2b")
+                canvas.create_window((0, 0), window=content_frame, anchor="nw")
+
+                # Получение списка элементов (как в оригинале)
+                items = []
+                content_path = os.path.join(mod_folder, "content", content_type)
+                
+                if not os.path.exists(content_path):
+                    ctk.CTkLabel(content_frame, text=f"Папка {content_type} не найдена").pack(pady=20)
+                    return
+
+                if content_type == "blocks":
+                    for block_type in os.listdir(content_path):
+                        type_path = os.path.join(content_path, block_type)
+                        if os.path.isdir(type_path):
+                            for file in os.listdir(type_path):
+                                if file.endswith(".json"):
+                                    items.append({
+                                        "name": os.path.splitext(file)[0],
+                                        "type": block_type,
+                                        "full_path": os.path.join(type_path, file)
+                                    })
+                else:
+                    for file in os.listdir(content_path):
+                        if file.endswith(".json"):
+                            items.append({
+                                "name": os.path.splitext(file)[0],
+                                "full_path": os.path.join(content_path, file)
+                            })
+
+                if not items:
+                    ctk.CTkLabel(content_frame, text=f"Нет {content_type} в моде").pack(pady=20)
+                    return
+
+                # Параметры карточек
+                CARD_WIDTH = 160
+                CARD_HEIGHT = 180
+                MARGIN = 5  # Отступ между карточками
+                
+                # Функция создания карточки (оптимизированная)
+                def create_card(parent, item):
+                    card = ctk.CTkFrame(
+                        parent,
+                        width=CARD_WIDTH,
+                        height=CARD_HEIGHT,
+                        fg_color="#3a3a3a",
+                        corner_radius=8,
+                        border_width=1,
+                        border_color="#4a4a4a"
+                    )
+                    card.pack_propagate(False)
+                    
+                    # Загрузка иконки
+                    try:
+                        img_path = os.path.join(mod_folder, "sprites", 
+                                            item["type"] if content_type == "blocks" else content_type,
+                                            f"{item['name']}.png")
+                        img = ctk.CTkImage(Image.open(img_path), size=(80, 80)) if os.path.exists(img_path) else None
+                    except:
+                        img = None
+                    
+                    ctk.CTkLabel(card, image=img, text="X" if not img else "", 
+                                font=("Arial", 40) if not img else None).pack(pady=(10, 5))
+                    
+                    ctk.CTkLabel(card, text=item["name"], font=("Arial", 12, "bold"),
+                                wraplength=CARD_WIDTH-20).pack(pady=(0, 10))
+                    
+                    # Контекстное меню
+                    if content_type in ["items", "liquids"]:
+                        menu = tk.Menu(root, tearoff=0)
+                        menu.add_command(label="Удалить", command=lambda: delete_item(item, content_type))
+                        menu.add_command(label="Редактировать", command=lambda: edit_item_json(item["full_path"]))
+                        
+                        def show_menu(e):
+                            try: menu.tk_popup(e.x_root, e.y_root)
+                            finally: menu.grab_release()
+                        
+                        card.bind("<Button-3>", show_menu)
+                        card.bind("<Double-Button-1>", lambda e: edit_item_json(item["full_path"]))
+                    
+                    return card
+
+                # Интеллектуальное размещение карточек
+                def place_cards():
+                    canvas.update_idletasks()
+                    width = canvas.winfo_width()
+                    
+                    # Рассчитываем доступное пространство
+                    cards_per_row = max(1, width // (CARD_WIDTH + MARGIN))
+                    remaining_space = width - (cards_per_row * (CARD_WIDTH + MARGIN))
+                    
+                    # Очищаем предыдущее размещение
+                    for widget in content_frame.winfo_children():
+                        widget.destroy()
+                    
+                    current_row = None
+                    for i, item in enumerate(items):
+                        if i % cards_per_row == 0:
+                            current_row = ctk.CTkFrame(content_frame, fg_color="transparent")
+                            current_row.pack(fill="x", pady=0)
+                        
+                        card = create_card(current_row, item)
+                        card.pack(side="left", padx=MARGIN//2)
+                        
+                        # Равномерное распределение оставшегося пространства
+                        if i % cards_per_row == cards_per_row - 1 and remaining_space > 0:
+                            extra = ctk.CTkFrame(current_row, width=remaining_space, fg_color="transparent")
+                            extra.pack(side="left")
+
+                    content_frame.update_idletasks()
+                    canvas.configure(scrollregion=canvas.bbox("all"))
+
+                # Первоначальное размещение и обработка ресайза
+                place_cards()
+                canvas.bind("<Configure>", lambda e: place_cards())
+                
+                # Прокрутка колесом мыши
+                canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-e.delta/60), "units"))
+
+            # Загружаем контент для каждой вкладки
+            load_content("Блоки", "blocks")
+            load_content("Предметы", "items") 
+            load_content("Жидкости", "liquids")
 
         def create_item_window():
             """Форма для создания предмета"""
@@ -467,7 +735,7 @@ class MindustryModCreator:
                 
                 # Загрузка текстуры
                 texture_url = "https://raw.githubusercontent.com/Anuken/Mindustry/master/core/assets-raw/sprites/items/liquid-water.png"  # можно сделать переменной позже
-                sprite_folder = os.path.join("mindustry_mod_creator", "mods", mod_name, "sprites", "liquid")
+                sprite_folder = os.path.join("mindustry_mod_creator", "mods", mod_name, "sprites", "liquids")
                 texture_path = os.path.join(sprite_folder, f"{name}.png")
                 os.makedirs(sprite_folder, exist_ok=True)
 
@@ -1238,7 +1506,7 @@ class MindustryModCreator:
             def delete_block(block_name, folder_path):
                 block_type = os.path.basename(folder_path)
                 json_path = os.path.join(folder_path, f"{block_name}.json")
-                sprite_folder_path = os.path.join(mod_folder, "sprites", block_type, block_name)
+                sprite_folder_path = os.path.join("mindustry_mod_creator", "sprites", block_type, block_name)
                 cache_path = os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")
 
                 try:
@@ -4435,8 +4703,7 @@ class MindustryModCreator:
                             fg_color="#e62525", 
                             hover_color="#701c1c", border_color="#701c1c",
                             command=skip_liquids).pack(side="left", padx=20)
-
-#/////////////////////////////////////////////////////////////////////////////////
+            #/////////////////////////////////////////////////////////////////////////////////
             def cb_wall_create():
                 clear_window()
 
@@ -4609,20 +4876,40 @@ class MindustryModCreator:
                 # Устанавливаем серый фон
                 root.configure(fg_color="#2b2b2b")
                 
-                ctk.CTkLabel(root, text="Имя завода", font=("Arial", 12)).pack()
-                entry_name = ctk.CTkEntry(root, width=350)
+                # Главный контейнер с вертикальным расположением элементов
+                main_container = ctk.CTkFrame(root)
+                main_container.pack(pady=20, padx=20, fill="both", expand=True)
+                
+                # Контейнер для содержимого (будет расширяться)
+                content_frame = ctk.CTkFrame(main_container)
+                content_frame.pack(fill="both", expand=True)
+                
+                # Создаем TabView внутри content_frame
+                tabview = ctk.CTkTabview(content_frame, width=600)
+                tabview.pack(fill="both", expand=True, pady=(0, 10))
+                
+                # Добавляем вкладки
+                tabview.add("Основные настройки")
+                tabview.add("Эффекты")
+                
+                # ===== Первая страница (Основные настройки) =====
+                main_frame = tabview.tab("Основные настройки")
+                
+                # Все элементы управления
+                ctk.CTkLabel(main_frame, text="Имя завода", font=("Arial", 12)).pack()
+                entry_name = ctk.CTkEntry(main_frame, width=350)
                 entry_name.pack()
 
-                ctk.CTkLabel(root, text="Описание", font=("Arial", 12)).pack()
-                entry_desc = ctk.CTkEntry(root, width=350)
+                ctk.CTkLabel(main_frame, text="Описание", font=("Arial", 12)).pack()
+                entry_desc = ctk.CTkEntry(main_frame, width=350)
                 entry_desc.pack()
 
-                ctk.CTkLabel(root, text="ХП (макс. 1.000.000)", font=("Arial", 12)).pack()
-                entry_health = ctk.CTkEntry(root, width=150)
+                ctk.CTkLabel(main_frame, text="ХП (макс. 1.000.000)", font=("Arial", 12)).pack()
+                entry_health = ctk.CTkEntry(main_frame, width=150)
                 entry_health.pack()
 
-                ctk.CTkLabel(root, text="Размер (макс. 15)", font=("Arial", 12)).pack()
-                entry_size = ctk.CTkEntry(root, width=150)
+                ctk.CTkLabel(main_frame, text="Размер (макс. 15)", font=("Arial", 12)).pack()
+                entry_size = ctk.CTkEntry(main_frame, width=150)
                 entry_size.pack()
 
                 # Чекбокс включения энергии
@@ -4636,28 +4923,32 @@ class MindustryModCreator:
                         label_energy_input.pack_forget()
                         entry_energy_input.pack_forget()
 
-                ctk.CTkCheckBox(root, text="Использует энергию", variable=power_enabled, command=toggle_power_entry).pack(pady=6)
+                ctk.CTkCheckBox(main_frame, text="Использует энергию", variable=power_enabled, command=toggle_power_entry).pack(pady=6)
 
-                label_energy_input = ctk.CTkLabel(root, text="Потребление энергии")
-                entry_energy_input = ctk.CTkEntry(root, width=150)
+                label_energy_input = ctk.CTkLabel(main_frame, text="Потребление энергии")
+                entry_energy_input = ctk.CTkEntry(main_frame, width=150)
                 label_energy_input.pack_forget()
                 entry_energy_input.pack_forget()
 
-                ctk.CTkLabel(root, text="Введите скорость производства 1 предмета в 1 секунду").pack()
-                entry_time_input = ctk.CTkEntry(root, width=150)
+                ctk.CTkLabel(main_frame, text="Введите скорость производства 1 предмета в 1 секунду").pack()
+                entry_time_input = ctk.CTkEntry(main_frame, width=150)
                 entry_time_input.pack()
 
                 with open(resource_path(os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
-                ctk.CTkLabel(root, text="Исследования для открытия").pack()
+                ctk.CTkLabel(main_frame, text="Исследования для открытия").pack()
                 research_parent_entry = ctk.CTkComboBox(
-                    root,
+                    main_frame,
                     values=CACHE_FILE.get("GenericCrafter", []),
                     state="readonly",
                     width=250
                 )
                 research_parent_entry.pack()
+
+                # ===== Вторая страница (Эффекты) =====
+                effects_frame = tabview.tab("Эффекты")
+                ctk.CTkLabel(effects_frame, text="Здесь будут настройки эффектов (пока пусто)").pack(pady=50)
 
                 def save_GenericCrafter():
                     name = entry_name.get().strip().replace(" ", "_")
@@ -4670,9 +4961,9 @@ class MindustryModCreator:
                         time_cr = int(entry_time_input.get())
                         time_craft = time_cr * 60
                         if health > 1000000 or health < 1:
-                             raise ValueError
+                            raise ValueError
                         if size > 15 or size < 1:
-                             raise ValueError
+                            raise ValueError
                     except ValueError:
                         messagebox.showerror("Ошибка", "Проверьте числовые значения и размер.")
                         return
@@ -4728,8 +5019,37 @@ class MindustryModCreator:
 
                     open_item_GenericCrafter_editor(name, block_data)
 
-                ctk.CTkButton(root, text="💾 Сохранить", command=save_GenericCrafter).pack(pady=20)
-                ctk.CTkButton(root, text="Назад", command=lambda: create_block(mod_name)).pack()
+                # Фрейм для кнопок внизу окна
+                buttons_frame = ctk.CTkFrame(main_container)
+                buttons_frame.pack(fill="x", pady=(10, 0))  # Прижимаем к низу
+                
+                # Стиль для кнопок
+                button_style = {
+                    "width": 150,
+                    "height": 40,
+                    "font": ("Arial", 14, "bold"),
+                    "corner_radius": 8
+                }
+
+                # Кнопка Назад (слева)
+                ctk.CTkButton(
+                    buttons_frame,
+                    text="Назад",
+                    command=lambda: create_block(mod_name),
+                    fg_color="#d44646",
+                    hover_color="#ff6b6b",
+                    **button_style
+                ).pack(side="left", padx=10, pady=5)
+
+                # Кнопка Сохранить (справа)
+                ctk.CTkButton(
+                    buttons_frame,
+                    text="💾 Сохранить",
+                    command=save_GenericCrafter,
+                    fg_color="#2e8b57",
+                    hover_color="#3cb371",
+                    **button_style
+                ).pack(side="right", padx=10, pady=5)
 
             def cb_solarpanel_create():
                 clear_window()
@@ -5658,7 +5978,7 @@ class MindustryModCreator:
             entry_name.pack(pady=10)
             
             # Автоматически вызываем setup_mod_json без кнопки "Далее"
-            setup_mod_json()
+            setup_mod_json_auto()
 
         # Заполнение списка модами из папки
         mods_dir = os.path.join("mindustry_mod_creator", "mods")
