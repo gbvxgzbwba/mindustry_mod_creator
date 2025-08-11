@@ -9,6 +9,7 @@ import platform
 import subprocess
 
 from PIL import Image, ImageTk
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from tkinter import messagebox
 from copy import deepcopy
 
@@ -31,7 +32,6 @@ theme_test["CTkEntry"] = {
 # Настройка темы CTk
 ctk.set_appearance_mode("Dark")  # Режим: "System", "Dark", "Light"
 ctk.ThemeManager.theme = theme_test
-#ctk.set_default_color_theme("dark-green")  # Темы: "blue", "green", "dark-blue" (((THEME_TEST)))
 
 requirements_list = []
 
@@ -58,6 +58,9 @@ def load_or_create_cache(mod_name):
             "surge-wall-large",
             "phase-wall",
             "phase-wall-large"
+        ],
+        "ThermalGenerator": [
+            "thermal-generator"
         ],
         "SolarGenerator": [
             "solar-panel",
@@ -101,15 +104,13 @@ def load_or_create_cache(mod_name):
         ],
         "BridgeConveyor": ["bridge-conveyor", "phase-conveyor"],
         "BridgeConduit": ["bridge-conduit", "phase-conduit"],
-        "battery": ["battery", "battery-large"],
-        "Drill": ["mechanical-drill", "pneumatic-drill", "laser-drill", "blast-drill"],
         "PowerNode": ["power-node", "power-node-large"],
         "router": ["Router", "Distributor"],
         "Junction": ["Junction"],
         "Unloader": ["Unloader"],
         "liquid_router": ["liquid-router"],
         "Liquid_Junction": ["Liquid-Junction"],
-        "LiquidTank": ["liquid-tank"]
+        "Battery": ["Battery-large", "Battery"]
     }
     path = os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")
 
@@ -117,14 +118,14 @@ def load_or_create_cache(mod_name):
     os.makedirs(cache_file_path, exist_ok=True)
     
     if not os.path.exists(path):
-        with open(path, "w+", encoding="utf-8") as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(default_cache, f, indent=4, ensure_ascii=False)
         return default_cache
     try:
-        with open(path, "r+", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except json.JSONDecodeError:
-        with open(path, "w+", encoding="utf-8") as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(default_cache, f, indent=4, ensure_ascii=False)
         return default_cache
     
@@ -205,8 +206,8 @@ class MindustryModCreator:
 
             # Минимальная версия игры (Combobox)
             label_version = ctk.CTkLabel(form_frame, text="Минимальная версия игры")
-            combo_version = ctk.CTkComboBox(form_frame, values=["146", "149"], state="readonly", width=150)
-            combo_version.set("146")
+            combo_version = ctk.CTkComboBox(form_frame, values=["149", "150.1"], state="readonly", width=150)
+            combo_version.set("149")
 
             label_version.grid(row=4, column=0, sticky="w", padx=10, pady=5)
             combo_version.grid(row=4, column=1, padx=10, pady=5, sticky="w")
@@ -220,7 +221,7 @@ class MindustryModCreator:
                 entries[1].insert(0, mod_data.get("author", ""))
                 entries[2].insert(0, mod_data.get("version", ""))
                 entries[3].insert(0, mod_data.get("description", ""))
-                combo_version.set(str(mod_data.get("minGameVersion", "146")))
+                combo_version.set(str(mod_data.get("minGameVersion", "149")))
 
             # Кнопка сохранения
             button_create = ctk.CTkButton(root, text="💾 Сохранить mod.json", font=("Arial", 12),
@@ -266,40 +267,74 @@ class MindustryModCreator:
 
         def создание_кнопки():
             """Главное меню с просмотром контента"""
-            
+
             def delete_item(item, content_type):
-                """Удаление элемента с подтверждением"""
-                # Определяем путь к текстуре
-                if content_type == "blocks":
-                    sprite_path = os.path.join(mod_folder, "sprites", "blocks", item["type"], f"{item['name']}.png")
+                """Удаление элемента с очисткой всех связанных данных"""
+                # Определяем тип (для blocks - item["type"], для остальных - content_type)
+                sprite_type = item["type"] if content_type == "blocks" else content_type
+                item_name = item["name"]
+                
+                # Основные пути для проверки
+                texture_folder = os.path.join(mod_folder, "sprites", sprite_type, item_name)  # sprites/type/name/
+                single_texture = os.path.join(mod_folder, "sprites", sprite_type, f"{item_name}.png")  # sprites/type/name.png
+                cache_path = os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")  # cache/modname.json
+
+                # Формируем сообщение о том, что будет удалено
+                confirm_msg = f"Вы уверены, что хотите удалить {content_type[:-1]} '{item_name}'?\n\n"
+                confirm_msg += f"• Файл данных: {item['full_path']}\n"
+                
+                # Добавляем информацию о текстурах
+                if os.path.exists(texture_folder):
+                    confirm_msg += f"• Будет удалена ВСЯ папка с текстурами: {texture_folder}\n"
+                elif os.path.exists(single_texture):
+                    confirm_msg += f"• Будет удален файл текстуры: {single_texture}\n"
                 else:
-                    sprite_path = os.path.join(mod_folder, "sprites", content_type, f"{item['name']}.png")
-                
-                # Сообщение с подтверждением
-                confirm_msg = f"Вы уверены, что хотите удалить {content_type[:-1]} '{item['name']}'?\n\n"
-                confirm_msg += f"Файл: {item['full_path']}\n"
-                confirm_msg += f"Текстура: {sprite_path}" if os.path.exists(sprite_path) else "Текстура не найдена"
-                
+                    confirm_msg += "• Текстуры не найдены\n"
+
+                # Запрашиваем подтверждение
                 if not messagebox.askyesno("Подтверждение удаления", confirm_msg):
                     return
-                
+
                 try:
-                    # Удаляем JSON файл
+                    # 1. Удаляем основной файл данных
                     if os.path.exists(item["full_path"]):
                         os.remove(item["full_path"])
-                    
-                    # Удаляем текстуру, если она существует
-                    texture_deleted = False
-                    if os.path.exists(sprite_path):
-                        os.remove(sprite_path)
-                        texture_deleted = True
-                    
-                    # Сообщение о результате
-                    result_msg = f"{content_type[:-1]} '{item['name']}' успешно удален"
-                    if texture_deleted:
-                        result_msg += "\nТекстура также была удалена"
-                    else:
-                        result_msg += "\nТекстура не была найдена"
+
+                    # 2. Удаляем текстуры (приоритет - удаление папки)
+                    if os.path.exists(texture_folder):
+                        shutil.rmtree(texture_folder)
+                    elif os.path.exists(single_texture):
+                        os.remove(single_texture)
+
+                    # 3. Чистим кэш
+                    item_removed = False  # Инициализируем переменную перед использованием
+                    if os.path.exists(cache_path):
+                        with open(cache_path, "r", encoding="utf-8") as f:
+                            cache = json.load(f)
+                        
+                        # Ищем элемент во всех категориях кэша
+                        for category in list(cache.keys()):  # Используем list() для безопасной итерации
+                            if category == "_comment":
+                                continue  # Пропускаем комментарий
+                            
+                            if isinstance(cache[category], list) and item_name in cache[category]:
+                                cache[category].remove(item_name)
+                                item_removed = True
+                                
+                                # Если категория стала пустой - удаляем её
+                                if not cache[category]:
+                                    del cache[category]
+                                
+                                break  # Прекращаем поиск после первого нахождения
+                        
+                        # Сохраняем изменения в кэше, если элемент был найден и удалён
+                        if item_removed:
+                            with open(cache_path, "w", encoding="utf-8") as f:
+                                json.dump(cache, f, indent=4, ensure_ascii=False)
+
+                    # Формируем сообщение о результате
+                    result_msg = f"{content_type[:-1]} '{item_name}' успешно удален\n"
+                    result_msg += "• Все связанные текстуры удалены\n" if os.path.exists(texture_folder) or os.path.exists(single_texture) else ""
                     
                     messagebox.showinfo("Успех", result_msg)
                     # Обновляем интерфейс
@@ -325,6 +360,8 @@ class MindustryModCreator:
                 editor = ctk.CTkToplevel(root)
                 editor.title(f"Редактор {os.path.basename(json_path)}")
                 editor.geometry("800x600")
+
+                editor.after(500, lambda: editor.focus_force())
                 
                 text_frame = ctk.CTkFrame(editor)
                 text_frame.pack(fill="both", expand=True, padx=10, pady=10)
@@ -368,7 +405,8 @@ class MindustryModCreator:
             def create_zip():
                 try:
                     folder_path = os.path.join("mindustry_mod_creator", "mods", mod_name)
-                    zip_path = os.path.join("mindustry_mod_creator", "mods", f"{mod_name}.zip")
+                    appdata = os.getenv('AppData')
+                    zip_path = os.path.join(f"{appdata}", "Mindustry/mods/", f"{mod_name}.zip")
 
                     if not os.path.exists(folder_path):
                         messagebox.showerror("Ошибка", f"Папка мода не существует:\n{folder_path}")
@@ -377,6 +415,14 @@ class MindustryModCreator:
                     if not os.listdir(folder_path):
                         messagebox.showerror("Ошибка", f"Папка мода пуста:\n{folder_path}")
                         return None
+
+                    # Удаляем старый ZIP-архив, если он существует
+                    if os.path.exists(zip_path):
+                        try:
+                            os.remove(zip_path)
+                        except Exception as e:
+                            messagebox.showerror("Ошибка", f"Не удалось удалить старый архив:\n{str(e)}")
+                            return None
 
                     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
                         for root, _, files in os.walk(folder_path):
@@ -391,6 +437,583 @@ class MindustryModCreator:
                 except Exception as e:
                     messagebox.showerror("Ошибка", f"Не удалось создать архив:\n{str(e)}")
                     return None
+
+            def edit_requirements_from_context():
+                """Редактор требований для блока, выбранного в главном меню"""
+                if not hasattr(root, 'current_block_item'):
+                    messagebox.showerror("Ошибка", "Блок не выбран")
+                    return
+                
+                item = root.current_block_item
+                block_name = item["name"]
+                folder_path = os.path.dirname(item["full_path"])
+                
+                # Загружаем данные блока
+                block_path = os.path.join(folder_path, f"{block_name}.json")
+                if not os.path.exists(block_path):
+                    messagebox.showerror("Ошибка", f"Файл блока не найден: {block_path}")
+                    return
+                
+                with open(block_path, "r", encoding="utf-8") as f:
+                    try:
+                        block_data = json.load(f)
+                    except json.JSONDecodeError:
+                        messagebox.showerror("Ошибка", "Некорректный JSON файл блока.")
+                        return
+                
+                clear_window()
+                root.configure(fg_color="#2b2b2b")
+                
+                main_frame = ctk.CTkFrame(root, fg_color="transparent")
+                main_frame.pack(padx=10, pady=10, fill="both", expand=True)
+                
+                header_frame = ctk.CTkFrame(main_frame, height=90, fg_color="#3a3a3a", corner_radius=8)
+                header_frame.pack(fill="x", pady=(0, 15))
+                
+                try:
+                    block_type = block_data.get("type")
+                    texture_path = os.path.join(mod_folder, "sprites", block_type, block_name, f"{block_name}.png")
+                    if os.path.exists(texture_path):
+                        img = Image.open(texture_path)
+                        img = img.resize((70, 70), Image.LANCZOS)
+                        ctk_img = ctk.CTkImage(light_image=img, size=(70, 70))
+                        img_label = ctk.CTkLabel(header_frame, image=ctk_img, text="")
+                        img_label.pack(side="left", padx=20)
+                except Exception as e:
+                    print(f"Ошибка загрузки изображения: {e}")
+                
+                ctk.CTkLabel(header_frame, 
+                            text=f"Редактор требований: {block_name}, лимит 25000",
+                            font=("Arial", 18, "bold")).pack(side="left", padx=10)
+                
+                content_frame = ctk.CTkFrame(main_frame, fg_color="#3a3a3a", corner_radius=8)
+                content_frame.pack(fill="both", expand=True)
+                
+                def load_item_icon(item_name):
+                    icon_paths = [
+                        os.path.join(mod_folder, "sprites", "items", f"{item_name}.png"),
+                        os.path.join("mindustry_mod_creator", "sprites", "items", f"{item_name}.png"),
+                        os.path.join("mindustry_mod_creator", "icons", f"{item_name}.png")
+                    ]
+                    for path in icon_paths:
+                        if os.path.exists(path):
+                            try:
+                                img = Image.open(path)
+                                img = img.resize((50, 50), Image.LANCZOS)
+                                return ctk.CTkImage(light_image=img, size=(50, 50))
+                            except:
+                                continue
+                    return None
+                
+                # Списки предметов
+                default_items = [
+                    "copper", "lead", "metaglass", "graphite", "sand", 
+                    "coal", "titanium", "thorium", "scrap", "silicon",
+                    "plastanium", "phase-fabric", "surge-alloy", "spore-pod", 
+                    "blast-compound", "pyratite"
+                ]
+                
+                mod_items = []
+                mod_items_path = os.path.join(mod_folder, "content", "items")
+                if os.path.exists(mod_items_path):
+                    mod_items = [f.replace(".json", "") for f in os.listdir(mod_items_path) if f.endswith(".json")]
+
+                default_item_entries = {}
+                mod_item_entries = {}
+
+                def create_item_card(parent, item, is_mod_item=False):
+                    card_frame = ctk.CTkFrame(parent, 
+                                            fg_color="#4a4a4a", 
+                                            corner_radius=8,
+                                            height=180)
+                    card_frame.pack_propagate(False)
+                    
+                    content_frame = ctk.CTkFrame(card_frame, fg_color="transparent")
+                    content_frame.pack(fill="both", expand=True, padx=10, pady=10)
+                    
+                    top_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+                    top_frame.pack(fill="x", pady=(0, 10))
+                    
+                    icon = load_item_icon(item)
+                    if icon:
+                        ctk.CTkLabel(top_frame, image=icon, text="").pack()
+                    
+                    ctk.CTkLabel(top_frame, 
+                                text=item.capitalize(), 
+                                font=("Arial", 14),
+                                anchor="center").pack()
+                    
+                    bottom_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+                    bottom_frame.pack(fill="x", pady=(10, 0))
+
+                    int_value = tk.IntVar(value=0)
+                    str_value = tk.StringVar(value="0")
+                    max_value = 25000
+
+                    if "research" in block_data and "requirements" in block_data["research"]:
+                        for req in block_data["research"]["requirements"]:
+                            if req["item"] == item:
+                                str_value.set(str(req["amount"]))
+                                break
+
+                    def sync_values(*args):
+                        try:
+                            val = str_value.get()
+                            int_value.set(int(val) if val else 0)
+                        except:
+                            int_value.set(0)
+                    
+                    str_value.trace_add("write", sync_values)
+                    
+                    def validate_input(new_val):
+                        if new_val == "":
+                            return True
+                        if not new_val.isdigit():
+                            return False
+                        if len(new_val) > 5:
+                            return False
+                        if int(new_val) > max_value:
+                            return False
+                        return True
+                    
+                    validation = parent.register(validate_input)
+                    
+                    controls_frame = ctk.CTkFrame(bottom_frame, fg_color="transparent")
+                    controls_frame.pack(fill="x", pady=5)
+                    
+                    controls_frame.grid_columnconfigure(0, weight=0, minsize=35)
+                    controls_frame.grid_columnconfigure(1, weight=1, minsize=70)
+                    controls_frame.grid_columnconfigure(2, weight=0, minsize=35)
+
+                    def start_increment(change):
+                        global is_pressed
+                        is_pressed = True
+                        update_value(change)
+                        root.after(100, lambda: repeat_increment(change))
+
+                    def stop_increment():
+                        global is_pressed
+                        is_pressed = False
+
+                    def repeat_increment(change):
+                        if is_pressed:
+                            update_value(change)
+                            root.after(100, lambda: repeat_increment(change))
+                    
+                    def update_value(change):
+                        try:
+                            current = str_value.get()
+                            try:
+                                current_num = int(current) if current else 0
+                            except ValueError:
+                                current_num = 0
+                            new_value = max(0, min(max_value, current_num + change))
+                            str_value.set(str(new_value))
+                        except Exception as e:
+                            str_value.set("0")
+
+                    minus_btn = ctk.CTkButton(
+                        controls_frame,
+                        text="-",
+                        width=35,
+                        height=35,
+                        font=("Arial", 16),
+                        fg_color="#e62525",
+                        hover_color="#701c1c",
+                        border_color="#701c1c",
+                        corner_radius=6,
+                        anchor="center",
+                        command=lambda: update_value(-1)
+                    )
+                    minus_btn.bind("<ButtonPress-1>", lambda e: start_increment(-1))
+                    minus_btn.bind("<ButtonRelease-1>", lambda e: stop_increment())
+                    minus_btn.grid(row=0, column=0, padx=(0, 5), sticky="nsew")
+
+                    entry = ctk.CTkEntry(
+                        controls_frame,
+                        width=70,
+                        height=35,
+                        font=("Arial", 14),
+                        textvariable=str_value,
+                        fg_color="#BE6F24",
+                        border_color="#613e11",
+                        justify="center",
+                        validate="key",
+                        validatecommand=(validation, "%P")
+                    )
+                    entry.grid(row=0, column=1, padx=5, sticky="ew")
+
+                    plus_btn = ctk.CTkButton(
+                        controls_frame,
+                        text="+",
+                        width=35,
+                        height=35,
+                        font=("Arial", 16),
+                        corner_radius=6,
+                        anchor="center",
+                        command=lambda: update_value(1)
+                    )
+                    plus_btn.bind("<ButtonPress-1>", lambda e: start_increment(1))
+                    plus_btn.bind("<ButtonRelease-1>", lambda e: stop_increment())
+                    plus_btn.grid(row=0, column=2, padx=(5, 0), sticky="nsew")
+                    
+                    def handle_focus_out(event):
+                        if str_value.get() == "":
+                            str_value.set("0")
+                    
+                    entry.bind("<FocusOut>", handle_focus_out)
+                    
+                    if is_mod_item:
+                        mod_item_entries[item] = int_value
+                    else:
+                        default_item_entries[item] = int_value
+                    
+                    return card_frame
+                
+                def calculate_columns(container_width):
+                    min_card_width = 180
+                    spacing = 10
+                    max_columns = max(1, container_width // (min_card_width + spacing))
+                    if max_columns * (min_card_width + spacing) - spacing <= container_width:
+                        return max_columns, min_card_width
+                    return 1, -1
+                
+                def update_grid(canvas, items_frame, items):
+                    container_width = canvas.winfo_width()
+                    if container_width < 1:
+                        return
+                    
+                    columns, card_width = calculate_columns(container_width)
+                    
+                    for widget in items_frame.grid_slaves():
+                        widget.grid_forget()
+                    
+                    for i, item in enumerate(items):
+                        row = i // columns
+                        col = i % columns
+                        is_mod_item = item in mod_items
+                        card = create_item_card(items_frame, item, is_mod_item)
+                        if card_width == -1:
+                            card.configure(width=container_width - 20)
+                        else:
+                            card.configure(width=card_width)
+                        card.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
+                    
+                    items_frame.update_idletasks()
+                    canvas.configure(scrollregion=canvas.bbox("all"))
+                    
+                    if items_frame.winfo_height() <= canvas.winfo_height():
+                        canvas.yview_moveto(0)
+                        scrollbar.pack_forget()
+                    else:
+                        scrollbar.pack(side="right", fill="y")
+                
+                # Создаем скроллируемый контейнер для всех предметов
+                canvas = tk.Canvas(content_frame, bg="#3a3a3a", highlightthickness=0)
+                scrollbar = ctk.CTkScrollbar(content_frame, orientation="vertical", command=canvas.yview)
+                canvas.configure(yscrollcommand=scrollbar.set)
+                
+                scrollbar.pack(side="right", fill="y")
+                canvas.pack(side="left", fill="both", expand=True, padx=10, pady=10)
+                
+                items_frame = ctk.CTkFrame(canvas, fg_color="#3a3a3a")
+                canvas.create_window((0, 0), window=items_frame, anchor="nw")
+
+                def on_mousewheel(event):
+                    canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+                canvas.bind_all("<MouseWheel>", on_mousewheel)
+                
+                # Объединяем все предметы в один список
+                all_items = default_items + mod_items
+                update_grid(canvas, items_frame, all_items)
+                
+                canvas.bind("<Configure>", lambda e: update_grid(canvas, items_frame, all_items))
+                items_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+                
+                footer_frame = ctk.CTkFrame(main_frame, height=70, fg_color="#3a3a3a", corner_radius=8)
+                footer_frame.pack(fill="x", pady=(15, 0))
+                
+                btn_frame = ctk.CTkFrame(footer_frame, fg_color="transparent")
+                btn_frame.pack(expand=True, pady=15)
+
+                def save_requirements():
+                    requirements = []
+                    
+                    for item, var in default_item_entries.items():
+                        amount = var.get()
+                        if amount > 0:
+                            requirements.append({"item": item, "amount": amount})
+                    
+                    for item, var in mod_item_entries.items():
+                        amount = var.get()
+                        if amount > 0:
+                            requirements.append({"item": item, "amount": amount})
+                    
+                    if not requirements:
+                        messagebox.showwarning("Ошибка", "Вы не добавили ни одного ресурса!")
+                        return
+                    
+                    if "research" not in block_data:
+                        block_data["research"] = {}
+                    
+                    block_data["research"]["requirements"] = requirements
+                    
+                    try:
+                        with open(block_path, "w", encoding="utf-8") as f:
+                            json.dump(block_data, f, indent=4, ensure_ascii=False)
+                        
+                        messagebox.showinfo("Успех", f"Требования для блока '{block_name}' успешно сохранены!")
+                        создание_кнопки()
+                    
+                    except Exception as e:
+                        messagebox.showerror("Ошибка", f"Не удалось сохранить требования: {str(e)}")
+                
+                ctk.CTkButton(btn_frame, 
+                            text="Сохранить", 
+                            width=140, 
+                            height=45,
+                            font=("Arial", 14),
+                            command=save_requirements).pack(side="left", padx=20)
+                
+                ctk.CTkButton(btn_frame, 
+                            text="Отмена", 
+                            width=140, 
+                            height=45,
+                            font=("Arial", 14),
+                            fg_color="#e62525", 
+                            hover_color="#701c1c", 
+                            border_color="#701c1c",
+                            command=создание_кнопки).pack(side="left", padx=20)
+            
+            def edit_requirements_from_parent():
+                """Редактор требований для блока, выбранного в главном меню"""
+                if not hasattr(root, 'current_block_item'):
+                    messagebox.showerror("Ошибка", "Блок не выбран")
+                    return
+                
+                item = root.current_block_item
+                block_name = item["name"]
+                folder_path = os.path.dirname(item["full_path"])
+                
+                # Загружаем данные блока
+                block_path = os.path.join(folder_path, f"{block_name}.json")
+                if not os.path.exists(block_path):
+                    messagebox.showerror("Ошибка", f"Файл блока не найден: {block_path}")
+                    return
+                
+                with open(block_path, "r", encoding="utf-8") as f:
+                    try:
+                        block_data = json.load(f)
+                    except json.JSONDecodeError:
+                        messagebox.showerror("Ошибка", "Некорректный JSON файл блока.")
+                        return
+                
+                clear_window()
+                root.configure(fg_color="#2b2b2b")
+                
+                main_frame = ctk.CTkFrame(root, fg_color="transparent")
+                main_frame.pack(padx=10, pady=10, fill="both", expand=True)
+                
+                header_frame = ctk.CTkFrame(main_frame, height=90, fg_color="#3a3a3a", corner_radius=8)
+                header_frame.pack(fill="x", pady=(0, 15))
+                
+                try:
+                    block_type = block_data.get("type")
+                    texture_path = os.path.join(mod_folder, "sprites", block_type, block_name, f"{block_name}.png")
+                    if not os.path.exists(texture_path):
+                        texture_path = os.path.join(mod_folder, "sprites", block_type, f"{block_name}.png")
+                    if os.path.exists(texture_path):
+                        img = Image.open(texture_path)
+                        img = img.resize((70, 70), Image.LANCZOS)
+                        ctk_img = ctk.CTkImage(light_image=img, size=(70, 70))
+                        img_label = ctk.CTkLabel(header_frame, image=ctk_img, text="")
+                        img_label.pack(side="left", padx=20)
+                except Exception as e:
+                    print(f"Ошибка загрузки изображения: {e}")
+                
+                ctk.CTkLabel(header_frame, 
+                            text=f"Выберите родительский блок для: {block_name}",
+                            font=("Arial", 18, "bold")).pack(side="left", padx=10)
+                
+                content_frame = ctk.CTkFrame(main_frame, fg_color="#3a3a3a", corner_radius=8)
+                content_frame.pack(fill="both", expand=True)
+                
+                # Загрузка списка блоков из кэша
+                mod_name = os.path.basename(mod_folder)
+                cache_path = os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")
+                blocks_list = []
+                
+                if os.path.exists(cache_path):
+                    with open(cache_path, "r", encoding="utf-8") as f:
+                        try:
+                            cache_data = json.load(f)
+                            # Получаем список блоков в формате {"type": "block_type", "name": "block_name"}
+                            for block_type, blocks in cache_data.items():
+                                if block_type == "_comment":
+                                    continue
+                                if isinstance(blocks, list):
+                                    for block_name_in_cache in blocks:
+                                        if block_name_in_cache:  # Пропускаем пустые имена
+                                            blocks_list.append({
+                                                "type": block_type,
+                                                "name": block_name_in_cache
+                                            })
+                        except json.JSONDecodeError as e:
+                            messagebox.showerror("Ошибка", f"Некорректный JSON файл кэша: {e}")
+                            return
+                
+                # Фрейм для списка блоков с grid layout
+                blocks_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+                blocks_frame.pack(fill="both", expand=True, padx=10, pady=10)
+                
+                # Прокручиваемый canvas
+                canvas = tk.Canvas(blocks_frame, bg="#3a3a3a", highlightthickness=0)
+                scrollbar = ctk.CTkScrollbar(blocks_frame, orientation="vertical", command=canvas.yview)
+                canvas.configure(yscrollcommand=scrollbar.set)
+                
+                scrollbar.pack(side="right", fill="y")
+                canvas.pack(side="left", fill="both", expand=True)
+                
+                inner_frame = ctk.CTkFrame(canvas, fg_color="transparent")
+                canvas.create_window((0, 0), window=inner_frame, anchor="nw")
+                
+                def on_canvas_configure(event):
+                    canvas.configure(scrollregion=canvas.bbox("all"))
+                
+                canvas.bind("<Configure>", on_canvas_configure)
+                
+                def load_block_icon(block_info):
+                    block_type = block_info["type"]
+                    block_name = block_info["name"]
+                    
+                    # Пробуем найти иконку в нескольких местах
+                    icon_paths = [
+                        os.path.join(mod_folder, "sprites", block_type, block_name, f"{block_name}.png"),
+                        os.path.join(mod_folder, "sprites", block_type, f"{block_name}.png"),
+                        os.path.join("mindustry_mod_creator", "icons", f"{block_name}.png"),
+                        os.path.join("mindustry_mod_creator", "sprites", block_type, f"{block_name}.png")
+                    ]
+                    
+                    for path in icon_paths:
+                        if os.path.exists(path):
+                            try:
+                                img = Image.open(path)
+                                img = img.resize((50, 50), Image.LANCZOS)
+                                return ctk.CTkImage(light_image=img, size=(50, 50))
+                            except Exception as e:
+                                print(f"Ошибка загрузки иконки {path}: {e}")
+                                continue
+                    return None
+                
+                def create_block_card(parent, block_info):
+                    block_type = block_info["type"]
+                    block_name_in_cache = block_info["name"]
+                    
+                    card_frame = ctk.CTkFrame(parent, 
+                                            fg_color="#4a4a4a", 
+                                            corner_radius=8,
+                                            width=200,
+                                            height=220)
+                    card_frame.pack_propagate(False)
+                    
+                    content_frame = ctk.CTkFrame(card_frame, fg_color="transparent")
+                    content_frame.pack(fill="both", expand=True, padx=10, pady=10)
+                    
+                    # Верхняя часть с иконкой и информацией
+                    top_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+                    top_frame.pack(fill="both", expand=True)
+                    
+                    icon = load_block_icon(block_info)
+                    if icon:
+                        ctk.CTkLabel(top_frame, image=icon, text="").pack(pady=5)
+                    
+                    ctk.CTkLabel(top_frame, 
+                                text=block_name_in_cache,
+                                font=("Arial", 14, "bold"),
+                                anchor="center").pack()
+                    
+                    ctk.CTkLabel(top_frame, 
+                                text=f"Тип: {block_type}",
+                                font=("Arial", 11),
+                                anchor="center").pack()
+                    
+                    # Кнопка выбора
+                    def on_select():
+                        # Добавляем выбранный блок как parent
+                        if "research" not in block_data:
+                            block_data["research"] = {"parent": block_name_in_cache}
+                        else:
+                            block_data["research"]["parent"] = block_name_in_cache
+                        
+                        # Сохраняем изменения
+                        try:
+                            with open(block_path, "w", encoding="utf-8") as f:
+                                json.dump(block_data, f, indent=4, ensure_ascii=False)
+                            messagebox.showinfo("Успех", f"Родительский блок '{block_name_in_cache}' установлен")
+                            edit_requirements_from_context()
+                        except Exception as e:
+                            messagebox.showerror("Ошибка", f"Не удалось сохранить: {e}")
+                    
+                    ctk.CTkButton(content_frame, 
+                                text="Выбрать", 
+                                command=on_select).pack(pady=5)
+                    
+                    return card_frame
+                
+                # Создаем карточки в grid layout
+                columns = 4  # Количество колонок по умолчанию
+                row = 0
+                col = 0
+                
+                for i, block_info in enumerate(blocks_list):
+                    if i % columns == 0 and i != 0:
+                        row += 1
+                        col = 0
+                    
+                    card = create_block_card(inner_frame, block_info)
+                    card.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
+                    inner_frame.grid_columnconfigure(col, weight=1)
+                    col += 1
+                
+                # Кнопка отмены
+                buttons_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+                buttons_frame.pack(fill="x", pady=(10, 0))
+                
+                ctk.CTkButton(buttons_frame, 
+                            text="Отмена", 
+                            command=root.destroy,
+                            fg_color="#e62525",
+                            hover_color="#701c1c").pack(side="right", padx=10)
+                
+                # Обновляем прокрутку после создания всех элементов
+                inner_frame.update_idletasks()
+                canvas.configure(scrollregion=canvas.bbox("all"))
+                
+                # Функция для адаптивного изменения количества колонок
+                def update_columns(event=None):
+                    nonlocal columns
+                    canvas_width = canvas.winfo_width()
+                    if canvas_width > 1:
+                        new_columns = max(1, canvas_width // 210)  # 200 (ширина карточки) + 10 (отступы)
+                        if new_columns != columns:
+                            columns = new_columns
+                            rearrange_cards()
+                
+                def rearrange_cards():
+                    row = 0
+                    col = 0
+                    for i, card in enumerate(inner_frame.winfo_children()):
+                        if i % columns == 0 and i != 0:
+                            row += 1
+                            col = 0
+                        card.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
+                        col += 1
+                    inner_frame.update_idletasks()
+                    canvas.configure(scrollregion=canvas.bbox("all"))
+                
+                # Привязываем обработчик изменения размера
+                canvas.bind("<Configure>", lambda e: (on_canvas_configure(e), update_columns(e)))
+                update_columns()
 
             global mod_folder
             mod_folder = os.path.join("mindustry_mod_creator", "mods", f"{mod_name}")
@@ -409,9 +1032,12 @@ class MindustryModCreator:
 
             # Кнопки в левой панели
             action_buttons = [
-                ("📦 Создать предмет", create_item_window),
-                ("💧 Создать жидкость", create_liquid_window),
                 ("🧱 Создать блок", lambda: create_block(mod_name)),
+                ("📦 Создать предмет", create_item_window),
+                ("💧 Создать жидкость", create_liquid_window)
+            ]
+
+            action_buttons_2 = [
                 ("📁 Создать ZIP", create_zip),
                 ("📂 Открыть папку", open_mod_folder)
             ]
@@ -419,6 +1045,20 @@ class MindustryModCreator:
             for text, cmd in action_buttons:
                 btn = ctk.CTkButton(
                     left_panel,
+                    hover_color="#800000", border_color="#800000",
+                    text=text,
+                    width=180,
+                    height=40,
+                    font=("Arial", 14),
+                    anchor="w",
+                    command=cmd
+                )
+                btn.pack(pady=5, padx=10, fill="x")
+
+            for text, cmd in action_buttons_2:
+                btn = ctk.CTkButton(
+                    left_panel,
+                    hover_color="#001380", border_color="#001380",
                     text=text,
                     width=180,
                     height=40,
@@ -493,9 +1133,9 @@ class MindustryModCreator:
                     return
 
                 # Параметры карточек
-                CARD_WIDTH = 160
-                CARD_HEIGHT = 180
-                MARGIN = 5  # Отступ между карточками
+                CARD_WIDTH = 170
+                CARD_HEIGHT = 170
+                MARGIN = 15  # Отступ между карточками
                 
                 # Функция создания карточки (оптимизированная)
                 def create_card(parent, item):
@@ -512,24 +1152,49 @@ class MindustryModCreator:
                     
                     # Загрузка иконки
                     try:
+                        # Первый путь: sprites/{type}/{name}/
                         img_path = os.path.join(mod_folder, "sprites", 
                                             item["type"] if content_type == "blocks" else content_type,
-                                            f"{item['name']}.png")
+                                            item["name"], f"{item['name']}.png")
                         img = ctk.CTkImage(Image.open(img_path), size=(80, 80)) if os.path.exists(img_path) else None
+                        
+                        # Если не найдено, пробуем второй путь: sprites/{type}/
+                        if img is None:
+                            img_path = os.path.join(mod_folder, "sprites", 
+                                                item["type"] if content_type == "blocks" else content_type,
+                                                f"{item['name']}.png")
+                            img = ctk.CTkImage(Image.open(img_path), size=(80, 80)) if os.path.exists(img_path) else None
                     except:
                         img = None
                     
                     ctk.CTkLabel(card, image=img, text="X" if not img else "", 
                                 font=("Arial", 40) if not img else None).pack(pady=(10, 5))
                     
+                    if content_type == "blocks":
+                        ctk.CTkLabel(card, text=item["type"], font=("Arial", 12, "bold"),
+                                    ).pack(pady=(0, 5))
+                    
                     ctk.CTkLabel(card, text=item["name"], font=("Arial", 12, "bold"),
-                                wraplength=CARD_WIDTH-20).pack(pady=(0, 10))
+                                wraplength=CARD_WIDTH-20).pack(pady=(0, 15))
                     
                     # Контекстное меню
                     if content_type in ["items", "liquids"]:
                         menu = tk.Menu(root, tearoff=0)
                         menu.add_command(label="Удалить", command=lambda: delete_item(item, content_type))
-                        menu.add_command(label="Редактировать", command=lambda: edit_item_json(item["full_path"]))
+                        menu.add_command(label="Редактировать JSON", command=lambda: edit_item_json(item["full_path"]))
+                        
+                        def show_menu(e):
+                            try: menu.tk_popup(e.x_root, e.y_root)
+                            finally: menu.grab_release()
+                        
+                        card.bind("<Button-3>", show_menu)
+                        card.bind("<Double-Button-1>", lambda e: edit_item_json(item["full_path"]))
+                    
+                    if content_type in ["blocks"]:
+                        menu = tk.Menu(root, tearoff=0)
+                        menu.add_command(label="Удалить", command=lambda: delete_item(item, content_type))
+                        menu.add_command(label="Редактировать JSON", command=lambda: edit_item_json(item["full_path"]))
+                        menu.add_command(label="Редактировать исследования", command=lambda: [setattr(root, 'current_block_item', item), edit_requirements_from_parent()])
                         
                         def show_menu(e):
                             try: menu.tk_popup(e.x_root, e.y_root)
@@ -573,9 +1238,6 @@ class MindustryModCreator:
                 # Первоначальное размещение и обработка ресайза
                 place_cards()
                 canvas.bind("<Configure>", lambda e: place_cards())
-                
-                # Прокрутка колесом мыши
-                canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-e.delta/60), "units"))
 
             # Загружаем контент для каждой вкладки
             load_content("Блоки", "blocks")
@@ -795,8 +1457,9 @@ class MindustryModCreator:
             icons_dir = os.path.join("mindustry_mod_creator", "icons")
             os.makedirs(icons_dir, exist_ok=True)
             icons_folder = os.path.join("mindustry_mod_creator", "icons")
-                
+
             def load_all_icons(parent_window=None):
+                # Конфигурация загрузки
                 download_configs = [
                     (
                         "https://raw.githubusercontent.com/Anuken/Mindustry/master/core/assets-raw/sprites/items/",
@@ -810,18 +1473,64 @@ class MindustryModCreator:
                         "https://raw.githubusercontent.com/Anuken/Mindustry/master/core/assets-raw/sprites/blocks/",
                         {
                             "copper-wall": "walls/copper-wall.png",
-                            #"liquid-tank": "liquid/liquid-tank.png",
+                            "copper-wall-large": "walls/copper-wall-large.png",
+                            "titanium-wall": "walls/titanium-wall.png",
+                            "titanium-wall-large": "walls/titanium-wall-large.png",
+                            "plastanium-wall": "walls/plastanium-wall.png",
+                            "plastanium-wall-large": "walls/plastanium-wall-large.png",
+                            "thorium-wall": "walls/thorium-wall.png",
+                            "thorium-wall-large": "walls/thorium-wall-large.png",
+                            "surge-wall": "walls/surge-wall.png",
+                            "surge-wall-large": "walls/surge-wall-large.png",
+                            "phase-wall": "walls/phase-wall.png",
+                            "phase-wall-large": "walls/phase-wall-large.png",
+
                             "liquid-router": "liquid/liquid-router.png",
-                            "unloader": "storage/unloader.png",
+                            "bridge-conduit": "liquid/bridge-conduit.png",
+                            "phase-conduit": "liquid/phase-conduit.png",
+                            "conduit": "liquid/conduits/conduit-top-0.png",
+                            "pulse-conduit": "liquid/conduits/pulse-conduit-top-0.png",
                             "liquid-junction": "liquid/liquid-junction.png",
-                            "router": "distribution/router.png",
-                            "junction": "distribution/junction.png",
-                            "titanium-conveyor-0-0": "distribution/conveyors/titanium-conveyor-0-0.png",
+
+                            "container": "storage/container.png",
+                            "vault": "storage/vault.png",
+                            "unloader": "storage/unloader.png",
+
+                            "thermal-generator": "power/thermal-generator.png",
+                            "battery": "power/battery.png",
+                            "battery-large": "power/battery-large.png",
                             "steam-generator": "power/steam-generator.png",
                             "solar-panel": "power/solar-panel.png",
+                            "solar-panel-large": "power/solar-panel-large.png",
+                            "power-node": "power/power-node.png",
+                            "power-node-large": "power/power-node-large.png",
+                            "combustion-generator": "power/combustion-generator.png",
+                            "differential-generator": "power/differential-generator.png",
+
+                            "router": "distribution/router.png",
+                            "bridge-conveyor": "distribution/bridge-conveyor.png",
+                            "phase-conveyor": "distribution/phase-conveyor.png",
+                            "distributor": "distribution/distributor.png",
+                            "junction": "distribution/junction.png",
+                            "titanium-conveyor": "distribution/conveyors/titanium-conveyor-0-0.png",
+                            "conveyor": "distribution/conveyors/conveyor-0-0.png",
+
                             "silicon-smelter": "production/silicon-smelter.png",
-                            "conduit-top-0": "liquid/conduits/conduit-top-0.png",
-                            "power-node": "power/power-node.png"
+                            "graphite-press": "production/graphite-press.png",
+                            "pyratite-mixer": "production/pyratite-mixer.png",
+                            "blast-mixer": "production/blast-mixer.png",
+                            "kiln": "production/kiln.png",
+                            "spore-press": "production/spore-press.png",
+                            "coal-centrifuge": "production/coal-centrifuge.png",
+                            "multi-press": "production/multi-press.png",
+                            "silicon-crucible": "production/silicon-crucible.png",
+                            "plastanium-compressor": "production/plastanium-compressor.png",
+                            "phase-weaver": "production/phase-weaver.png",
+                            "melter": "production/melter.png",
+                            "surge-smelter": "production/surge-smelter.png",
+                            "separator": "production/separator.png",
+                            "cryofluid-mixer": "production/cryofluid-mixer.png",
+                            "disassembler": "production/disassembler.png"
                         },
                         False
                     )
@@ -830,6 +1539,30 @@ class MindustryModCreator:
                 # Создаем папку для иконок, если ее нет
                 os.makedirs(icons_folder, exist_ok=True)
 
+                # Проверяем, какие файлы уже существуют
+                existing_files = set(os.listdir(icons_folder)) if os.path.exists(icons_folder) else set()
+
+                # Подсчет общего количества иконок (только тех, которых нет)
+                total_icons = 0
+                download_tasks = []
+
+                for base_url, name_icons, is_item in download_configs:
+                    if isinstance(name_icons, dict):
+                        for name, path in name_icons.items():
+                            if f"{name}.png" not in existing_files:
+                                total_icons += 1
+                                download_tasks.append((base_url + path, os.path.join(icons_folder, f"{name}.png"), name))
+                    else:
+                        for name in name_icons:
+                            if f"{name}.png" not in existing_files:
+                                filename = f"liquid-{name}.png" if name in ["water", "oil", "slag", "cryofluid"] else f"item-{name}.png" if is_item else f"{name}.png"
+                                total_icons += 1
+                                download_tasks.append((base_url + filename, os.path.join(icons_folder, f"{name}.png"), name))
+
+                if total_icons == 0:
+                    return True
+
+                # Инициализация окна прогресса
                 if parent_window:
                     progress_window = ctk.CTkToplevel(parent_window)
                     progress_window.title("Загрузка иконок")
@@ -837,7 +1570,7 @@ class MindustryModCreator:
                     progress_window.transient(parent_window)
                     progress_window.grab_set()
                     
-                    progress_label = ctk.CTkLabel(progress_window, text="Подготовка к загрузке...")
+                    progress_label = ctk.CTkLabel(progress_window, text=f"Загрузка {total_icons} иконок...")
                     progress_label.pack(pady=10)
                     
                     progress_bar = ctk.CTkProgressBar(progress_window, width=300)
@@ -849,11 +1582,8 @@ class MindustryModCreator:
                     
                     progress_window.update()
 
-                total_icons = sum(
-                    len(items) if isinstance(items, (list, dict)) else 0 
-                    for _, items, _ in download_configs
-                )
                 downloaded = 0
+                errors = []
 
                 def update_progress(current, total, name):
                     if parent_window:
@@ -863,67 +1593,77 @@ class MindustryModCreator:
                         progress_label.configure(text=f"Загружается: {name}.png")
                         progress_window.update()
 
+                def download_file(url, save_path, name):
+                    try:
+                        urllib.request.urlretrieve(url, save_path)
+                        return True, name
+                    except Exception as e:
+                        return False, (name, str(e))
+
                 try:
-                    for base_url, name_icons, is_item in download_configs:
-                        if isinstance(name_icons, dict):
-                            for name, path in name_icons.items():
-                                url = f"{base_url}{path}"
-                                save_path = os.path.join(icons_folder, f"{name}.png")
-                                
-                                if not os.path.exists(save_path):
-                                    try:
-                                        urllib.request.urlretrieve(url, save_path)
-                                        update_progress(downloaded, total_icons, name)
-                                    except Exception as e:
-                                        print(f"Ошибка загрузки {name}.png: {e}")
-                                        if parent_window:
-                                            progress_label.configure(text=f"Ошибка: {name}.png")
+                    # Используем ThreadPoolExecutor для параллельной загрузки (4 потока)
+                    with ThreadPoolExecutor(max_workers=4) as executor:
+                        futures = {executor.submit(download_file, url, path, name): (url, path, name) for url, path, name in download_tasks}
+                        
+                        for future in as_completed(futures):
+                            url, path, name = futures[future]
+                            success, result = future.result()
+                            
+                            if success:
                                 downloaded += 1
+                                if parent_window:
+                                    update_progress(downloaded, total_icons, name)
+                            else:
+                                errors.append(result)
+                                downloaded += 1
+                                if parent_window:
+                                    progress_label.configure(text=f"Ошибка: {name}.png")
+
+                    # Вывод ошибок, если они есть
+                    if errors:
+                        error_msg = "\n".join(f"{name}: {error}" for name, error in errors)
+                        if parent_window:
+                            messagebox.showwarning("Ошибки загрузки", f"Не удалось загрузить некоторые иконки:\n{error_msg}")
                         else:
-                            for name in name_icons:
-                                filename = ""
-                                if is_item:
-                                    # Проверяем, является ли это жидкостью
-                                    if name in ["water", "oil", "slag", "cryofluid"]:
-                                        filename = f"liquid-{name}.png"
-                                    else:
-                                        filename = f"item-{name}.png"
-                                else:
-                                    filename = f"{name}.png"
-                                    
-                                url = f"{base_url}{filename}"
-                                save_path = os.path.join(icons_folder, f"{name}.png")
-                                
-                                if not os.path.exists(save_path):
-                                    try:
-                                        urllib.request.urlretrieve(url, save_path)
-                                        update_progress(downloaded, total_icons, name)
-                                    except Exception as e:
-                                        print(f"Ошибка загрузки {name}.png: {e}")
-                                        if parent_window:
-                                            progress_label.configure(text=f"Ошибка: {name}.png")
-                                downloaded += 1
+                            print(f"Ошибки загрузки:\n{error_msg}")
 
                     if parent_window:
                         progress_label.configure(text="Загрузка завершена!")
                         progress_window.after(2000, progress_window.destroy)
                         
+                    return True
+                    
                 except Exception as e:
+                    error_msg = f"Критическая ошибка: {str(e)}"
                     if parent_window:
-                        progress_label.configure(text=f"Критическая ошибка: {str(e)}")
-                        messagebox.showerror("Ошибка", f"Произошла ошибка: {str(e)}")
+                        progress_label.configure(text=error_msg)
+                        messagebox.showerror("Ошибка", error_msg)
                     else:
-                        print(f"Критическая ошибка: {str(e)}")
-
+                        print(error_msg)
+                    return False
             load_all_icons(root)
-
-            def load_image(icon_name):
+            def load_image(icon_name, size=(64, 64)):
                 """Загрузка изображения с обработкой ошибок"""
                 try:
                     img_path = os.path.join(icons_dir, icon_name)
                     if os.path.exists(img_path):
                         img = Image.open(img_path)
-                        return ctk.CTkImage(light_image=img, size=(64, 64))
+                        return ctk.CTkImage(light_image=img, size=size)
+                    
+                    # Попробуем найти альтернативное имя (для обратной совместимости)
+                    if icon_name.endswith(".png"):
+                        base_name = icon_name[:-4]
+                        alternatives = [
+                            f"item-{base_name}.png",
+                            f"liquid-{base_name}.png",
+                            f"{base_name}.png"
+                        ]
+                        
+                        for alt in alternatives:
+                            alt_path = os.path.join(icons_dir, alt)
+                            if os.path.exists(alt_path):
+                                img = Image.open(alt_path)
+                                return ctk.CTkImage(light_image=img, size=size)
                 except Exception as e:
                     print(f"Ошибка загрузки изображения {icon_name}: {e}")
                 return None
@@ -943,380 +1683,6 @@ class MindustryModCreator:
             back_btn = ctk.CTkButton(right_frame, text="Назад", height=60,
                                     font=("Arial", 14), command=lambda: создание_кнопки())
             back_btn.pack(fill="x", pady=(0, 10))
-
-            editor_btn = ctk.CTkButton(right_frame, text="Редактор", height=60,
-                                    font=("Arial", 14), command=lambda: editor_cb())
-            editor_btn.pack(fill="x", pady=(0, 10))
-
-            research_btn = ctk.CTkButton(right_frame, text="Исследования", height=60,
-                                    font=("Arial", 14), command=lambda: editor_cb_research())
-            research_btn.pack(fill="x")
-
-            def editor_cb_research():
-                clear_window()
-                
-                # Создаем основную рамку для кнопок навигации
-                nav_frame = ctk.CTkFrame(root)
-                nav_frame.pack(pady=10)
-                
-                ctk.CTkButton(nav_frame, text="⬅️ Назад", command=lambda:create_block(mod_name)).pack(side="left", padx=5)
-                
-                # Создаем фрейм для списка блоков (без вкладок)
-                blocks_frame = ctk.CTkFrame(root)
-                blocks_frame.pack(pady=10, padx=10, fill="both", expand=True)
-                
-                # Загружаем блоки
-                blocks_folder = os.path.join(mod_folder, "content", "blocks")
-                if os.path.exists(blocks_folder):
-                    for folder_name in os.listdir(blocks_folder):
-                        folder_path = os.path.join(blocks_folder, folder_name)
-                        
-                        if not os.path.isdir(folder_path) or folder_name == "environment" or folder_name.startswith("."):
-                            continue
-                            
-                        # Добавляем кнопку для категории блоков
-                        btn = ctk.CTkButton(blocks_frame, text=folder_name, width=250, height=40,
-                                        command=lambda p=folder_path: open_block_folder_research(p))
-                        btn.pack(pady=3)
-            def open_block_folder_research(folder_path):
-                clear_window()
-
-                ctk.CTkButton(root, text="⬅️ Назад", command=editor_cb_research).pack(pady=10)
-
-                folder_name = os.path.basename(folder_path)
-                ctk.CTkLabel(root, text=f"Блоки из: {folder_name}", font=("Arial", 12)).pack(pady=5)
-
-                for file in os.listdir(folder_path):
-                    if file.endswith(".json"):
-                        block_name = os.path.splitext(file)[0]
-                        block_type = os.path.basename(folder_path)
-
-                        frame = ctk.CTkFrame(root)
-                        frame.pack(pady=2, fill="x")
-
-                        ctk.CTkLabel(frame, text=block_name, width=200, anchor="w").pack(side="left")
-
-                        # Только одна кнопка для редактирования требований
-                        ctk.CTkButton(frame, text="Редактировать требования", width=150,
-                                    command=lambda b=block_name, p=folder_path: edit_requirements(b, p)).pack(side="right", padx=2)
-            def edit_requirements(block_name, folder_path):
-                # Загружаем данные блока
-                block_path = os.path.join(folder_path, f"{block_name}.json")
-                if not os.path.exists(block_path):
-                    messagebox.showerror("Ошибка", f"Файл блока не найден: {block_path}")
-                    return
-                
-                with open(block_path, "r", encoding="utf-8") as f:
-                    try:
-                        block_data = json.load(f)
-                    except json.JSONDecodeError:
-                        messagebox.showerror("Ошибка", "Некорректный JSON файл блока.")
-                        return
-                
-                clear_window()
-                root.configure(fg_color="#2b2b2b")
-                
-                main_frame = ctk.CTkFrame(root, fg_color="transparent")
-                main_frame.pack(padx=10, pady=10, fill="both", expand=True)
-                
-                header_frame = ctk.CTkFrame(main_frame, height=90, fg_color="#3a3a3a", corner_radius=8)
-                header_frame.pack(fill="x", pady=(0, 15))
-                
-                try:
-                    block_type = block_data.get("type")
-                    texture_path = os.path.join(mod_folder, "sprites", block_type, block_name, f"{block_name}.png")
-                    if os.path.exists(texture_path):
-                        img = Image.open(texture_path)
-                        img = img.resize((70, 70), Image.LANCZOS)
-                        ctk_img = ctk.CTkImage(light_image=img, size=(70, 70))
-                        img_label = ctk.CTkLabel(header_frame, image=ctk_img, text="")
-                        img_label.pack(side="left", padx=20)
-                except Exception as e:
-                    print(f"Ошибка загрузки изображения: {e}")
-                
-                ctk.CTkLabel(header_frame, 
-                            text=f"Редактор требований: {block_name}",
-                            font=("Arial", 18, "bold")).pack(side="left", padx=10)
-                
-                content_frame = ctk.CTkFrame(main_frame, fg_color="#3a3a3a", corner_radius=8)
-                content_frame.pack(fill="both", expand=True)
-                
-                def load_item_icon(item_name):
-                    icon_paths = [
-                        os.path.join(mod_folder, "sprites", "items", f"{item_name}.png"),
-                        os.path.join("mindustry_mod_creator", "sprites", "items", f"{item_name}.png"),
-                        os.path.join("mindustry_mod_creator", "icons", f"{item_name}.png")
-                    ]
-                    for path in icon_paths:
-                        if os.path.exists(path):
-                            try:
-                                img = Image.open(path)
-                                img = img.resize((50, 50), Image.LANCZOS)
-                                return ctk.CTkImage(light_image=img, size=(50, 50))
-                            except:
-                                continue
-                    return None
-                
-                # Списки предметов
-                default_items = [
-                    "copper", "lead", "metaglass", "graphite", "sand", 
-                    "coal", "titanium", "thorium", "scrap", "silicon",
-                    "plastanium", "phase-fabric", "surge-alloy", "spore-pod", 
-                    "blast-compound", "pyratite"
-                ]
-                
-                mod_items = []
-                mod_items_path = os.path.join(mod_folder, "content", "items")
-                if os.path.exists(mod_items_path):
-                    mod_items = [f.replace(".json", "") for f in os.listdir(mod_items_path) if f.endswith(".json")]
-
-                default_item_entries = {}
-                mod_item_entries = {}
-
-                def create_item_card(parent, item, is_mod_item=False):
-                    card_frame = ctk.CTkFrame(parent, 
-                                            fg_color="#4a4a4a", 
-                                            corner_radius=8,
-                                            height=180)
-                    card_frame.pack_propagate(False)
-                    
-                    content_frame = ctk.CTkFrame(card_frame, fg_color="transparent")
-                    content_frame.pack(fill="both", expand=True, padx=10, pady=10)
-                    
-                    top_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
-                    top_frame.pack(fill="x", pady=(0, 10))
-                    
-                    icon = load_item_icon(item)
-                    if icon:
-                        ctk.CTkLabel(top_frame, image=icon, text="").pack()
-                    
-                    ctk.CTkLabel(top_frame, 
-                                text=item.capitalize(), 
-                                font=("Arial", 14),
-                                anchor="center").pack()
-                    
-                    bottom_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
-                    bottom_frame.pack(fill="x", pady=(10, 0))
-
-                    int_value = tk.IntVar(value=0)
-                    str_value = tk.StringVar(value="0")
-                    max_value = 70000
-
-                    if "research" in block_data and "requirements" in block_data["research"]:
-                        for req in block_data["research"]["requirements"]:
-                            if req["item"] == item:
-                                str_value.set(str(req["amount"]))
-                                break
-
-                    def sync_values(*args):
-                        try:
-                            val = str_value.get()
-                            int_value.set(int(val) if val else 0)
-                        except:
-                            int_value.set(0)
-                    
-                    str_value.trace_add("write", sync_values)
-                    
-                    def validate_input(new_val):
-                        if new_val == "":
-                            return True
-                        if not new_val.isdigit():
-                            return False
-                        if len(new_val) > 5:
-                            return False
-                        if int(new_val) > max_value:
-                            return False
-                        return True
-                    
-                    validation = parent.register(validate_input)
-                    
-                    controls_frame = ctk.CTkFrame(bottom_frame, fg_color="transparent")
-                    controls_frame.pack(fill="x", pady=5)
-                    
-                    controls_frame.grid_columnconfigure(0, weight=0, minsize=35)
-                    controls_frame.grid_columnconfigure(1, weight=1, minsize=70)
-                    controls_frame.grid_columnconfigure(2, weight=0, minsize=35)
-                    
-                    def update_value(change):
-                        try:
-                            current = str_value.get()
-                            try:
-                                current_num = int(current) if current else 0
-                            except ValueError:
-                                current_num = 0
-                            new_value = max(0, min(max_value, current_num + change))
-                            str_value.set(str(new_value))
-                        except Exception as e:
-                            str_value.set("0")
-
-                    minus_btn = ctk.CTkButton(
-                        controls_frame,
-                        text="-",
-                        width=35,
-                        height=35,
-                        font=("Arial", 16),
-                        fg_color="#e62525",
-                        hover_color="#701c1c",
-                        border_color="#701c1c",
-                        corner_radius=6,
-                        anchor="center",
-                        command=lambda: update_value(-1)
-                    )
-                    minus_btn.grid(row=0, column=0, padx=(0, 5), sticky="nsew")
-
-                    entry = ctk.CTkEntry(
-                        controls_frame,
-                        width=70,
-                        height=35,
-                        font=("Arial", 14),
-                        textvariable=str_value,
-                        fg_color="#BE6F24",
-                        border_color="#613e11",
-                        justify="center",
-                        validate="key",
-                        validatecommand=(validation, "%P")
-                    )
-                    entry.grid(row=0, column=1, padx=5, sticky="ew")
-
-                    plus_btn = ctk.CTkButton(
-                        controls_frame,
-                        text="+",
-                        width=35,
-                        height=35,
-                        font=("Arial", 16),
-                        corner_radius=6,
-                        anchor="center",
-                        command=lambda: update_value(1)
-                    )
-                    plus_btn.grid(row=0, column=2, padx=(5, 0), sticky="nsew")
-                    
-                    def handle_focus_out(event):
-                        if str_value.get() == "":
-                            str_value.set("0")
-                    
-                    entry.bind("<FocusOut>", handle_focus_out)
-                    
-                    if is_mod_item:
-                        mod_item_entries[item] = int_value
-                    else:
-                        default_item_entries[item] = int_value
-                    
-                    return card_frame
-                
-                def calculate_columns(container_width):
-                    min_card_width = 180
-                    spacing = 10
-                    max_columns = max(1, container_width // (min_card_width + spacing))
-                    if max_columns * (min_card_width + spacing) - spacing <= container_width:
-                        return max_columns, min_card_width
-                    return 1, -1
-                
-                def update_grid(canvas, items_frame, items):
-                    container_width = canvas.winfo_width()
-                    if container_width < 1:
-                        return
-                    
-                    columns, card_width = calculate_columns(container_width)
-                    
-                    for widget in items_frame.grid_slaves():
-                        widget.grid_forget()
-                    
-                    for i, item in enumerate(items):
-                        row = i // columns
-                        col = i % columns
-                        is_mod_item = item in mod_items
-                        card = create_item_card(items_frame, item, is_mod_item)
-                        if card_width == -1:
-                            card.configure(width=container_width - 20)
-                        else:
-                            card.configure(width=card_width)
-                        card.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
-                    
-                    items_frame.update_idletasks()
-                    canvas.configure(scrollregion=canvas.bbox("all"))
-                    
-                    if items_frame.winfo_height() <= canvas.winfo_height():
-                        canvas.yview_moveto(0)
-                        scrollbar.pack_forget()
-                    else:
-                        scrollbar.pack(side="right", fill="y")
-                
-                # Создаем скроллируемый контейнер для всех предметов
-                canvas = tk.Canvas(content_frame, bg="#3a3a3a", highlightthickness=0)
-                scrollbar = ctk.CTkScrollbar(content_frame, orientation="vertical", command=canvas.yview)
-                canvas.configure(yscrollcommand=scrollbar.set)
-                
-                scrollbar.pack(side="right", fill="y")
-                canvas.pack(side="left", fill="both", expand=True, padx=10, pady=10)
-                
-                items_frame = ctk.CTkFrame(canvas, fg_color="#3a3a3a")
-                canvas.create_window((0, 0), window=items_frame, anchor="nw")
-
-                def on_mousewheel(event):
-                    canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-                canvas.bind_all("<MouseWheel>", on_mousewheel)
-                
-                # Объединяем все предметы в один список
-                all_items = default_items + mod_items
-                update_grid(canvas, items_frame, all_items)
-                
-                canvas.bind("<Configure>", lambda e: update_grid(canvas, items_frame, all_items))
-                items_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-                
-                footer_frame = ctk.CTkFrame(main_frame, height=70, fg_color="#3a3a3a", corner_radius=8)
-                footer_frame.pack(fill="x", pady=(15, 0))
-                
-                btn_frame = ctk.CTkFrame(footer_frame, fg_color="transparent")
-                btn_frame.pack(expand=True, pady=15)
-
-                def save_requirements():
-                    requirements = []
-                    
-                    for item, var in default_item_entries.items():
-                        amount = var.get()
-                        if amount > 0:
-                            requirements.append({"item": item, "amount": amount})
-                    
-                    for item, var in mod_item_entries.items():
-                        amount = var.get()
-                        if amount > 0:
-                            requirements.append({"item": item, "amount": amount})
-                    
-                    if not requirements:
-                        messagebox.showwarning("Ошибка", "Вы не добавили ни одного ресурса!")
-                        return
-                    
-                    if "research" not in block_data:
-                        block_data["research"] = {}
-                    
-                    block_data["research"]["requirements"] = requirements
-                    
-                    try:
-                        with open(block_path, "w", encoding="utf-8") as f:
-                            json.dump(block_data, f, indent=4, ensure_ascii=False)
-                        
-                        messagebox.showinfo("Успех", f"Требования для блока '{block_name}' успешно сохранены!")
-                        open_block_folder(folder_path)
-                    
-                    except Exception as e:
-                        messagebox.showerror("Ошибка", f"Не удалось сохранить требования: {str(e)}")
-                
-                ctk.CTkButton(btn_frame, 
-                            text="Сохранить", 
-                            width=140, 
-                            height=45,
-                            font=("Arial", 14),
-                            command=save_requirements).pack(side="left", padx=20)
-                
-                ctk.CTkButton(btn_frame, 
-                            text="Отмена", 
-                            width=140, 
-                            height=45,
-                            font=("Arial", 14),
-                            fg_color="#e62525", 
-                            hover_color="#701c1c", 
-                            border_color="#701c1c",
-                            command=lambda: open_block_folder_research(folder_path)).pack(side="left", padx=20)
 
             #///////
             canvas = ctk.CTkCanvas(left_frame, bg="#2b2b2b", highlightthickness=0)
@@ -1338,18 +1704,20 @@ class MindustryModCreator:
 
             blocks = [
                 ("Стена", "copper-wall.png", lambda: cb_wall_create()),
-                ("Конвейер", "titanium-conveyor-0-0.png", lambda: cb_conveyor_create()),
+                ("Конвейер", "titanium-conveyor.png", lambda: cb_conveyor_create()),
                 ("Генератор", "steam-generator.png", lambda: cb_ConsumesGenerator_create()),
                 ("Солн. панель", "solar-panel.png", lambda: cb_solarpanel_create()),
-                ("Хранилище", "storage.png", lambda: cb_StorageBlock_create()),
+                ("Хранилище", "container.png", lambda: cb_StorageBlock_create()),
                 ("Завод", "silicon-smelter.png", lambda: cb_GenericCrafter_create()),
-                ("Труба", "conduit-top-0.png", lambda: cb_conduit_create()),
+                ("Труба", "conduit.png", lambda: cb_conduit_create()),
                 ("Энергоузел", "power-node.png", lambda: cb_powernode_create()),
                 ("Роутер", "router.png", lambda: cb_router_create()),
                 ("Перекрёсток", "junction.png", lambda: cb_Junction_create()),
                 ("Разгрушик", "unloader.png", lambda: cb_unloader_create()),
                 ("Роутер жидкости", "liquid-router.png", lambda: cb_liquid_router_create()),
-                ("Перекрёсток жидкости", "liquid-junction.png", lambda: cb_liquid_Junction_create())
+                ("Перекрёсток жидкости", "liquid-junction.png", lambda: cb_liquid_Junction_create()),
+                ("Батарейка", "battery.png", lambda: cb_battery_create()),
+                ("Термальный генератор", "thermal-generator.png", lambda: cb_thermalgenerator_create())
             ]
 
             blocks_container = ctk.CTkFrame(scrollable_frame, fg_color="transparent")
@@ -1410,198 +1778,6 @@ class MindustryModCreator:
                 update_blocks_grid()
 
             blocks_container.bind("<Configure>", on_resize)
-
-            def editor_cb():
-                clear_window()
-                
-                # Создаем основную рамку для кнопок навигации
-                nav_frame = ctk.CTkFrame(root)
-                nav_frame.pack(pady=10)
-                
-                ctk.CTkButton(nav_frame, text="⬅️ Назад", command=lambda:create_block(mod_name)).pack(side="left", padx=5)
-                
-                # Создаем вкладки для разных типов контента
-                tabs = ctk.CTkTabview(root)
-                tabs.pack(pady=10, padx=10, fill="both", expand=True)
-                
-                # Добавляем вкладки
-                tabs.add("Блоки")
-                tabs.add("Предметы")
-                tabs.add("Жидкости")
-                
-                # Вкладка для блоков
-                blocks_folder = os.path.join(mod_folder, "content", "blocks")
-                if os.path.exists(blocks_folder):
-                    for folder_name in os.listdir(blocks_folder):
-                        folder_path = os.path.join(blocks_folder, folder_name)
-                        
-                        if not os.path.isdir(folder_path) or folder_name == "environment" or folder_name.startswith("."):
-                            continue
-                            
-                        # Добавляем кнопку для категории блоков
-                        btn = ctk.CTkButton(tabs.tab("Блоки"), text=folder_name, width=250, height=40,
-                                        command=lambda p=folder_path: open_block_folder(p))
-                        btn.pack(pady=3)
-                
-                # Вкладка для предметов
-                items_folder = os.path.join(mod_folder, "content", "items")
-                if os.path.exists(items_folder):
-                    for file in os.listdir(items_folder):
-                        if file.endswith(".json"):
-                            item_name = os.path.splitext(file)[0]
-                            
-                            frame = ctk.CTkFrame(tabs.tab("Предметы"))
-                            frame.pack(pady=2, fill="x")
-                            
-                            ctk.CTkLabel(frame, text=item_name, width=200, anchor="w").pack(side="left")
-                            
-                            # Кнопки для предмета
-                            ctk.CTkButton(frame, text="Редактировать", width=100,
-                                        command=lambda n=item_name: edit_item(n)).pack(side="right", padx=2)
-                            ctk.CTkButton(frame, text="Удалить", width=100,
-                                        command=lambda n=item_name: delete_item(n)).pack(side="right", padx=2)
-                
-                # Вкладка для жидкостей
-                liquids_folder = os.path.join(mod_folder, "content", "liquids")
-                if os.path.exists(liquids_folder):
-                    for file in os.listdir(liquids_folder):
-                        if file.endswith(".json"):
-                            liquid_name = os.path.splitext(file)[0]
-                            
-                            frame = ctk.CTkFrame(tabs.tab("Жидкости"))
-                            frame.pack(pady=2, fill="x")
-                            
-                            ctk.CTkLabel(frame, text=liquid_name, width=200, anchor="w").pack(side="left")
-                            
-                            # Кнопки для жидкости
-                            ctk.CTkButton(frame, text="Редактировать", width=100,
-                                        command=lambda n=liquid_name: edit_liquid(n)).pack(side="right", padx=2)
-                            ctk.CTkButton(frame, text="Удалить", width=100,
-                                        command=lambda n=liquid_name: delete_liquid(n)).pack(side="right", padx=2)
-            def open_block_folder(folder_path):
-                clear_window()
-
-                ctk.CTkButton(root, text="⬅️ Назад", command=editor_cb).pack(pady=10)
-
-                folder_name = os.path.basename(folder_path)
-                ctk.CTkLabel(root, text=f"Блоки из: {folder_name}", font=("Arial", 12)).pack(pady=5)
-
-                for file in os.listdir(folder_path):
-                    if file.endswith(".json"):
-                        block_name = os.path.splitext(file)[0]
-                        block_type = os.path.basename(folder_path)
-
-                        frame = ctk.CTkFrame(root)
-                        frame.pack(pady=2, fill="x")
-
-                        ctk.CTkLabel(frame, text=block_name, width=200, anchor="w").pack(side="left")
-
-                        # Кнопка редактирования
-                        ctk.CTkButton(frame, text="Редактировать", width=100,
-                                    command=lambda b=block_name, p=folder_path: edit_block(b, p)).pack(side="right", padx=2)
-
-                        # Кнопка для удаления блока
-                        ctk.CTkButton(frame, text="Удалить", width=100,
-                                    command=lambda b=block_name, p=folder_path: delete_block(b, p)).pack(side="right", padx=2)
-            def delete_block(block_name, folder_path):
-                block_type = os.path.basename(folder_path)
-                json_path = os.path.join(folder_path, f"{block_name}.json")
-                sprite_folder_path = os.path.join("mindustry_mod_creator", "sprites", block_type, block_name)
-                cache_path = os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")
-
-                try:
-                    # Удалить JSON-файл
-                    if os.path.exists(json_path):
-                        os.remove(json_path)
-
-                    # Удалить папку с текстурами, если она есть
-                    if os.path.isdir(sprite_folder_path):
-                        shutil.rmtree(sprite_folder_path)
-
-                    # Удаление из cache.json
-                    if os.path.exists(cache_path):
-                        with open(cache_path, "r", encoding="utf-8") as f:
-                            cache = json.load(f)
-
-                        if block_type in cache and block_name in cache[block_type]:
-                            cache[block_type].remove(block_name)
-                            with open(cache_path, "w", encoding="utf-8") as f:
-                                json.dump(cache, f, indent=4, ensure_ascii=False)
-
-                    # Обновить интерфейс
-                    open_block_folder(folder_path)
-
-                except Exception as e:
-                    messagebox.showerror("Ошибка удаления", f"Не удалось удалить: {e}")
-            def edit_block(block_name, folder_path):
-                path = os.path.join(folder_path, f"{block_name}.json")
-                edit_json_file(path, f"Редактирование блока: {block_name}")
-            def edit_item(item_name):
-                path = os.path.join(mod_folder, "content", "items", f"{item_name}.json")
-                edit_json_file(path, f"Редактирование предмета: {item_name}")
-            def edit_liquid(liquid_name):
-                path = os.path.join(mod_folder, "content", "liquids", f"{liquid_name}.json")
-                edit_json_file(path, f"Редактирование жидкости: {liquid_name}")
-            def delete_item(item_name):
-                json_path = os.path.join(mod_folder, "content", "items", f"{item_name}.json")
-                sprite_path = os.path.join(mod_folder, "sprites", "items", f"{item_name}.png")
-                
-                try:
-                    if os.path.exists(json_path):
-                        os.remove(json_path)
-                    if os.path.exists(sprite_path):
-                        os.remove(sprite_path)
-                    messagebox.showinfo("Успех", f"Предмет {item_name} удален!")
-                    editor_cb()
-                except Exception as e:
-                    messagebox.showerror("Ошибка", f"Не удалось удалить предмет: {e}")
-            def delete_liquid(liquid_name):
-                json_path = os.path.join(mod_folder, "content", "liquids", f"{liquid_name}.json")
-                
-                try:
-                    if os.path.exists(json_path):
-                        os.remove(json_path)
-                    messagebox.showinfo("Успех", f"Жидкость {liquid_name} удалена!")
-                    editor_cb()
-                except Exception as e:
-                    messagebox.showerror("Ошибка", f"Не удалось удалить жидкость: {e}")
-            def edit_json_file(file_path, title):
-                if not os.path.exists(file_path):
-                    messagebox.showerror("Ошибка", f"Файл не найден: {file_path}")
-                    return
-
-                with open(file_path, "r", encoding="utf-8") as f:
-                    try:
-                        data = json.load(f)
-                    except json.JSONDecodeError:
-                        messagebox.showerror("Ошибка", "Некорректный JSON.")
-                        return
-
-                top = ctk.CTkToplevel(root)
-                top.title(title)
-                top.geometry("800x600")
-                
-                text_frame = ctk.CTkFrame(top)
-                text_frame.pack(pady=10, padx=10, fill="both", expand=True)
-                
-                text = ctk.CTkTextbox(text_frame, font=("Consolas", 12))
-                text.pack(fill="both", expand=True, padx=5, pady=5)
-                text.insert("1.0", json.dumps(data, indent=4, ensure_ascii=False))
-                
-                button_frame = ctk.CTkFrame(top)
-                button_frame.pack(pady=10)
-                
-                def save_changes():
-                    try:
-                        new_data = json.loads(text.get("1.0", tk.END))
-                        with open(file_path, "w", encoding="utf-8") as f:
-                            json.dump(new_data, f, indent=4, ensure_ascii=False)
-                        messagebox.showinfo("Успех", "Файл успешно сохранён!")
-                    except Exception as e:
-                        messagebox.showerror("Ошибка", f"Не удалось сохранить: {str(e)}")
-                
-                ctk.CTkButton(button_frame, text="Сохранить", command=save_changes).pack(side="left", padx=5)
-                ctk.CTkButton(button_frame, text="Отмена", command=top.destroy).pack(side="left", padx=5)
 
             def open_requirements_editor(block_name, block_data):
                 clear_window()
@@ -4703,6 +4879,861 @@ class MindustryModCreator:
                             fg_color="#e62525", 
                             hover_color="#701c1c", border_color="#701c1c",
                             command=skip_liquids).pack(side="left", padx=20)
+
+            def open_requirements_editor_battery(block_name, block_data):
+                clear_window()
+                
+                root.configure(fg_color="#2b2b2b")
+                
+                main_frame = ctk.CTkFrame(root, fg_color="transparent")
+                main_frame.pack(padx=10, pady=10, fill="both", expand=True)
+                
+                header_frame = ctk.CTkFrame(main_frame, height=90, fg_color="#3a3a3a", corner_radius=8)
+                header_frame.pack(fill="x", pady=(0, 15))
+                
+                try:
+                    block_type = block_data.get("type")
+                    texture_path = os.path.join("mindustry_mod_creator", "mods", mod_name, "sprites", block_type, block_name, f"{block_name}.png")
+                    if os.path.exists(texture_path):
+                        img = Image.open(texture_path)
+                        img = img.resize((70, 70), Image.LANCZOS)
+                        ctk_img = ctk.CTkImage(light_image=img, size=(70, 70))
+                        img_label = ctk.CTkLabel(header_frame, image=ctk_img, text="")
+                        img_label.pack(side="left", padx=20)
+                except Exception as e:
+                    print(f"Ошибка загрузки изображения: {e}")
+                
+                ctk.CTkLabel(header_frame, 
+                            text=f"Редактор ресурсов конвейера: {block_name}, {block_type}, максимум 70.000",
+                            font=("Arial", 18, "bold")).pack(side="left", padx=10)
+                
+                content_frame = ctk.CTkFrame(main_frame, fg_color="#3a3a3a", corner_radius=8)
+                content_frame.pack(fill="both", expand=True)
+                
+                def load_item_icon(item_name):
+                    icon_paths = [
+                        os.path.join(mod_folder, "sprites", "items", f"{item_name}.png"),
+                        os.path.join("mindustry_mod_creator", "sprites", "items", f"{item_name}.png"),
+                        os.path.join("mindustry_mod_creator", "icons", f"{item_name}.png")
+                    ]
+                    for path in icon_paths:
+                        if os.path.exists(path):
+                            try:
+                                img = Image.open(path)
+                                img = img.resize((50, 50), Image.LANCZOS)
+                                return ctk.CTkImage(light_image=img, size=(50, 50))
+                            except:
+                                continue
+                    return None
+                
+                # Списки предметов
+                default_items = [
+                    "copper", "lead", "metaglass", "graphite", "sand", 
+                    "coal", "titanium", "thorium", "scrap", "silicon",
+                    "plastanium", "phase-fabric", "surge-alloy", "spore-pod", 
+                    "blast-compound", "pyratite"
+                ]
+                
+                mod_items = []
+                mod_items_path = os.path.join(mod_folder, "content", "items")
+                if os.path.exists(mod_items_path):
+                    mod_items = [f.replace(".json", "") for f in os.listdir(mod_items_path) if f.endswith(".json")]
+
+                default_item_entries = {}
+                mod_item_entries = {}
+
+                def create_item_card(parent, item, is_mod_item=False):
+                    card_frame = ctk.CTkFrame(parent, 
+                                            fg_color="#4a4a4a", 
+                                            corner_radius=8,
+                                            height=180)
+                    card_frame.pack_propagate(False)
+                    
+                    content_frame = ctk.CTkFrame(card_frame, fg_color="transparent")
+                    content_frame.pack(fill="both", expand=True, padx=10, pady=10)
+                    
+                    top_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+                    top_frame.pack(fill="x", pady=(0, 10))
+                    
+                    icon = load_item_icon(item)
+                    if icon:
+                        ctk.CTkLabel(top_frame, image=icon, text="").pack()
+                    
+                    ctk.CTkLabel(top_frame, 
+                                text=item.capitalize(), 
+                                font=("Arial", 14),
+                                anchor="center").pack()
+                    
+                    bottom_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+                    bottom_frame.pack(fill="x", pady=(10, 0))
+
+                    int_value = tk.IntVar(value=0)
+                    str_value = tk.StringVar(value="0")
+                    max_value = 70000
+
+                    def sync_values(*args):
+                        try:
+                            val = str_value.get()
+                            int_value.set(int(val) if val else 0)
+                        except:
+                            int_value.set(0)
+                    
+                    str_value.trace_add("write", sync_values)
+                    
+                    def validate_input(new_val):
+                        if new_val == "":
+                            return True
+                        if not new_val.isdigit():
+                            return False
+                        if len(new_val) > 5:
+                            return False
+                        if int(new_val) > max_value:
+                            return False
+                        return True
+                    
+                    validation = parent.register(validate_input)
+                    
+                    controls_frame = ctk.CTkFrame(bottom_frame, fg_color="transparent")
+                    controls_frame.pack(fill="x", pady=5)
+                    
+                    # Настройка grid layout
+                    controls_frame.grid_columnconfigure(0, weight=0, minsize=35)
+                    controls_frame.grid_columnconfigure(1, weight=1, minsize=70)
+                    controls_frame.grid_columnconfigure(2, weight=0, minsize=35)
+                    
+                    def update_value(change):
+                        try:
+                            current = str_value.get()
+                            try:
+                                current_num = int(current) if current else 0
+                            except ValueError:
+                                current_num = 0
+                            new_value = max(0, min(max_value, current_num + change))
+                            str_value.set(str(new_value))
+                        except Exception as e:
+                            str_value.set("0")
+
+                    def start_increment(change):
+                        global is_pressed
+                        is_pressed = True
+                        update_value(change)
+                        root.after(100, lambda: repeat_increment(change))
+
+                    def stop_increment():
+                        global is_pressed
+                        is_pressed = False
+
+                    def repeat_increment(change):
+                        if is_pressed:
+                            update_value(change)
+                            root.after(100, lambda: repeat_increment(change))
+
+                    minus_btn = ctk.CTkButton(
+                        controls_frame,
+                        text="-",
+                        width=35,
+                        height=35,
+                        font=("Arial", 16),
+                        fg_color="#e62525",
+                        hover_color="#701c1c",
+                        border_color="#701c1c",
+                        corner_radius=6,
+                        anchor="center"
+                    )
+                    minus_btn.grid(row=0, column=0, padx=(0, 5), sticky="nsew")
+                    minus_btn.bind("<ButtonPress-1>", lambda e: start_increment(-1))
+                    minus_btn.bind("<ButtonRelease-1>", lambda e: stop_increment())
+
+                    entry = ctk.CTkEntry(
+                        controls_frame,
+                        width=70,
+                        height=35,
+                        font=("Arial", 14),
+                        textvariable=str_value,
+                        fg_color="#BE6F24",
+                        border_color="#613e11",
+                        justify="center",
+                        validate="key",
+                        validatecommand=(validation, "%P")
+                    )
+                    entry.grid(row=0, column=1, padx=5, sticky="ew")
+
+                    plus_btn = ctk.CTkButton(
+                        controls_frame,
+                        text="+",
+                        width=35,
+                        height=35,
+                        font=("Arial", 16),
+                        corner_radius=6,
+                        anchor="center"
+                    )
+                    plus_btn.grid(row=0, column=2, padx=(5, 0), sticky="nsew")
+                    plus_btn.bind("<ButtonPress-1>", lambda e: start_increment(1))
+                    plus_btn.bind("<ButtonRelease-1>", lambda e: stop_increment())
+                    
+                    def handle_focus_out(event):
+                        if str_value.get() == "":
+                            str_value.set("0")
+                    
+                    entry.bind("<FocusOut>", handle_focus_out)
+                    
+                    if is_mod_item:
+                        mod_item_entries[item] = int_value
+                    else:
+                        default_item_entries[item] = int_value
+                    
+                    return card_frame
+                
+                def calculate_columns(container_width):
+                    min_card_width = 180
+                    spacing = 10
+                    max_columns = max(1, container_width // (min_card_width + spacing))
+                    if max_columns * (min_card_width + spacing) - spacing <= container_width:
+                        return max_columns, min_card_width
+                    return 1, -1
+                
+                def update_grid(canvas, items_frame, items):
+                    container_width = canvas.winfo_width()
+                    if container_width < 1:
+                        return
+                    
+                    columns, card_width = calculate_columns(container_width)
+                    
+                    for widget in items_frame.grid_slaves():
+                        widget.grid_forget()
+                    
+                    for i, item in enumerate(items):
+                        row = i // columns
+                        col = i % columns
+                        is_mod_item = item in mod_items
+                        card = create_item_card(items_frame, item, is_mod_item)
+                        if card_width == -1:
+                            card.configure(width=container_width - 20)
+                        else:
+                            card.configure(width=card_width)
+                        card.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
+                    
+                    items_frame.update_idletasks()
+                    canvas.configure(scrollregion=canvas.bbox("all"))
+                    
+                    if items_frame.winfo_height() <= canvas.winfo_height():
+                        canvas.yview_moveto(0)
+                        scrollbar.pack_forget()
+                    else:
+                        scrollbar.pack(side="right", fill="y")
+                
+                # Создаем один скроллируемый контейнер для всех предметов
+                canvas = tk.Canvas(content_frame, bg="#3a3a3a", highlightthickness=0)
+                scrollbar = ctk.CTkScrollbar(content_frame, orientation="vertical", command=canvas.yview)
+                canvas.configure(yscrollcommand=scrollbar.set)
+                
+                scrollbar.pack(side="right", fill="y")
+                canvas.pack(side="left", fill="both", expand=True, padx=10, pady=10)
+                
+                items_frame = ctk.CTkFrame(canvas, fg_color="#3a3a3a")
+                canvas.create_window((0, 0), window=items_frame, anchor="nw")
+
+                def on_mousewhell(event):
+                    canvas.yview_scroll(int(-1*(event.delta/120)),"units")
+                canvas.bind_all("<MouseWheel>", on_mousewhell)
+                canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
+                canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
+                
+                # Объединяем все предметы в один список
+                all_items = default_items + mod_items
+                update_grid(canvas, items_frame, all_items)
+                
+                canvas.bind("<Configure>", lambda e: update_grid(canvas, items_frame, all_items))
+                items_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+                
+                footer_frame = ctk.CTkFrame(main_frame, height=70, fg_color="#3a3a3a", corner_radius=8)
+                footer_frame.pack(fill="x", pady=(15, 0))
+                
+                btn_frame = ctk.CTkFrame(footer_frame, fg_color="transparent")
+                btn_frame.pack(expand=True, pady=15)
+
+                def save_requirements():
+                    requirements = []
+                    
+                    for item, var in default_item_entries.items():
+                        amount = var.get()
+                        if amount > 0:
+                            requirements.append({"item": item, "amount": amount})
+                    
+                    for item, var in mod_item_entries.items():
+                        amount = var.get()
+                        if amount > 0:
+                            requirements.append({"item": item, "amount": amount})
+                    
+                    if not requirements:
+                        messagebox.showwarning("Ошибка", "Вы не добавили ни одного ресурса!")
+                        return
+                    
+                    block_data["requirements"] = requirements
+                    
+                    try:
+                        block_type = block_data.get("type")
+                        content_folder = os.path.join("mindustry_mod_creator", "mods", mod_name, "content", "blocks", block_type)
+                        os.makedirs(content_folder, exist_ok=True)
+                        
+                        # Создаем окно прогресса и блокируем кнопки
+                        progress_window = ctk.CTkToplevel(root)
+                        progress_window.title("Загрузка текстур")
+                        progress_window.geometry("400x150")
+                        progress_window.transient(root)
+                        progress_window.grab_set()
+                        progress_window.protocol("WM_DELETE_WINDOW", lambda: None)  # Блокируем закрытие
+                        
+                        progress_label = ctk.CTkLabel(progress_window, text="Подготовка к загрузке...")
+                        progress_label.pack(pady=10)
+                        
+                        progress_bar = ctk.CTkProgressBar(progress_window, width=300)
+                        progress_bar.pack(pady=10)
+                        progress_bar.set(0)
+                        
+                        status_label = ctk.CTkLabel(progress_window, text="0/0")
+                        status_label.pack(pady=5)
+                        
+                        # Блокируем кнопки в основном окне
+                        for child in btn_frame.winfo_children():
+                            child.configure(state="disabled")
+                        
+                        # Список текстур для загрузки
+                        texture_names = [
+                            "battery", "battery-top"
+                        ]
+                        
+                        sprite_folder = os.path.join("mindustry_mod_creator", "mods", mod_name, "sprites", block_type, block_name)
+                        os.makedirs(sprite_folder, exist_ok=True)
+                        
+                        base_url = "https://raw.githubusercontent.com/Anuken/Mindustry/master/core/assets-raw/sprites/blocks/power/"
+                        total_files = len(texture_names)
+                        downloaded = 0
+                        
+                        def update_progress():
+                            nonlocal downloaded
+                            progress = (downloaded) / total_files
+                            progress_bar.set(progress)
+                            status_label.configure(text=f"{downloaded}/{total_files}")
+                            progress_window.update()
+                        
+                        def resize_image(image_path, size_multiplier):
+                            """Изменяет размер изображения согласно множителю (1=32px, 2=64px, ...)"""
+                            from PIL import Image
+                            try:
+                                original_size = 32  # Базовый размер текстур Mindustry
+                                new_size = original_size * size_multiplier
+                                
+                                img = Image.open(image_path)
+                                if img.size != (new_size, new_size):
+                                    img = img.resize((new_size, new_size), Image.Resampling.LANCZOS)
+                                    img.save(image_path)
+                            except Exception as e:
+                                print(f"Ошибка при изменении размера {image_path}: {e}")
+                        
+                        def download_textures():
+                            nonlocal downloaded
+                            try:
+                                size_multiplier = int(block_data.get("size", 1))  # Получаем множитель из block_data
+                                if size_multiplier < 1 or size_multiplier > 15:
+                                    size_multiplier = 1  # Защита от недопустимых значений
+                                
+                                for name in texture_names:
+                                    new_name = name.replace("battery", block_name, 1)
+                                    texture_path = os.path.join(sprite_folder, f"{new_name}.png")
+                                    
+                                    if not os.path.exists(texture_path):
+                                        texture_url = f"{base_url}{name}.png"
+                                        try:
+                                            urllib.request.urlretrieve(texture_url, texture_path)
+                                            # Изменяем размер после загрузки
+                                            resize_image(texture_path, size_multiplier)
+                                            progress_label.configure(text=f"Загружено: {new_name}.png")
+                                        except Exception as e:
+                                            progress_label.configure(text=f"Ошибка: {new_name}.png")
+                                    
+                                    downloaded += 1
+                                    progress_window.after(100, update_progress)
+                                
+                                # После завершения загрузки
+                                progress_window.after(100, lambda: finish_saving())
+                            
+                            except Exception as e:
+                                progress_window.after(100, lambda: error_occurred(str(e)))
+                        
+                        def finish_saving():
+                            try:
+                                block_path = os.path.join(content_folder, f"{block_name}.json")
+                                with open(block_path, "w", encoding="utf-8") as f:
+                                    json.dump(block_data, f, indent=4, ensure_ascii=False)
+                                
+                                progress_window.destroy()
+                                for child in btn_frame.winfo_children():
+                                    child.configure(state="normal")
+                                
+                                messagebox.showinfo("Успех", f"Конвейер '{block_name}' успешно сохранён!")
+                                создание_кнопки()
+                            
+                            except Exception as e:
+                                error_occurred(str(e))
+                        
+                        def error_occurred(error_msg):
+                            progress_window.destroy()
+                            for child in btn_frame.winfo_children():
+                                child.configure(state="normal")
+                            messagebox.showerror("Ошибка", f"Не удалось сохранить конвейер: {error_msg}")
+                        
+                        # Запускаем загрузку в отдельном потоке
+                        threading.Thread(target=download_textures, daemon=True).start()
+                    except Exception as e:
+                        messagebox.showerror("Ошибка", f"Неизвестная ошибка: {str(e)}")
+                    
+                    except Exception as e:
+                        messagebox.showerror("Ошибка", f"Не удалось начать сохранение: {str(e)}")
+                
+                ctk.CTkButton(btn_frame, 
+                            text="Сохранить", 
+                            width=140, 
+                            height=45,
+                            font=("Arial", 14),
+                            command=save_requirements).pack(side="left", padx=20)
+                
+                ctk.CTkButton(btn_frame, 
+                            text="Отмена", 
+                            width=140, 
+                            height=45,
+                            font=("Arial", 14),
+                            fg_color="#e62525", 
+                            hover_color="#701c1c", border_color="#701c1c",
+                            command=создание_кнопки).pack(side="left", padx=20)
+
+            def open_requirements_editor_storage(block_name, block_data):
+                clear_window()
+                
+                root.configure(fg_color="#2b2b2b")
+                
+                main_frame = ctk.CTkFrame(root, fg_color="transparent")
+                main_frame.pack(padx=10, pady=10, fill="both", expand=True)
+                
+                header_frame = ctk.CTkFrame(main_frame, height=90, fg_color="#3a3a3a", corner_radius=8)
+                header_frame.pack(fill="x", pady=(0, 15))
+                
+                try:
+                    block_type = block_data.get("type")
+                    texture_path = os.path.join("mindustry_mod_creator", "mods", mod_name, "sprites", block_type, block_name, f"{block_name}.png")
+                    if os.path.exists(texture_path):
+                        img = Image.open(texture_path)
+                        img = img.resize((70, 70), Image.LANCZOS)
+                        ctk_img = ctk.CTkImage(light_image=img, size=(70, 70))
+                        img_label = ctk.CTkLabel(header_frame, image=ctk_img, text="")
+                        img_label.pack(side="left", padx=20)
+                except Exception as e:
+                    print(f"Ошибка загрузки изображения: {e}")
+                
+                ctk.CTkLabel(header_frame, 
+                            text=f"Редактор ресурсов конвейера: {block_name}, {block_type}, максимум 70.000",
+                            font=("Arial", 18, "bold")).pack(side="left", padx=10)
+                
+                content_frame = ctk.CTkFrame(main_frame, fg_color="#3a3a3a", corner_radius=8)
+                content_frame.pack(fill="both", expand=True)
+                
+                def load_item_icon(item_name):
+                    icon_paths = [
+                        os.path.join(mod_folder, "sprites", "items", f"{item_name}.png"),
+                        os.path.join("mindustry_mod_creator", "sprites", "items", f"{item_name}.png"),
+                        os.path.join("mindustry_mod_creator", "icons", f"{item_name}.png")
+                    ]
+                    for path in icon_paths:
+                        if os.path.exists(path):
+                            try:
+                                img = Image.open(path)
+                                img = img.resize((50, 50), Image.LANCZOS)
+                                return ctk.CTkImage(light_image=img, size=(50, 50))
+                            except:
+                                continue
+                    return None
+                
+                # Списки предметов
+                default_items = [
+                    "copper", "lead", "metaglass", "graphite", "sand", 
+                    "coal", "titanium", "thorium", "scrap", "silicon",
+                    "plastanium", "phase-fabric", "surge-alloy", "spore-pod", 
+                    "blast-compound", "pyratite"
+                ]
+                
+                mod_items = []
+                mod_items_path = os.path.join(mod_folder, "content", "items")
+                if os.path.exists(mod_items_path):
+                    mod_items = [f.replace(".json", "") for f in os.listdir(mod_items_path) if f.endswith(".json")]
+
+                default_item_entries = {}
+                mod_item_entries = {}
+
+                def create_item_card(parent, item, is_mod_item=False):
+                    card_frame = ctk.CTkFrame(parent, 
+                                            fg_color="#4a4a4a", 
+                                            corner_radius=8,
+                                            height=180)
+                    card_frame.pack_propagate(False)
+                    
+                    content_frame = ctk.CTkFrame(card_frame, fg_color="transparent")
+                    content_frame.pack(fill="both", expand=True, padx=10, pady=10)
+                    
+                    top_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+                    top_frame.pack(fill="x", pady=(0, 10))
+                    
+                    icon = load_item_icon(item)
+                    if icon:
+                        ctk.CTkLabel(top_frame, image=icon, text="").pack()
+                    
+                    ctk.CTkLabel(top_frame, 
+                                text=item.capitalize(), 
+                                font=("Arial", 14),
+                                anchor="center").pack()
+                    
+                    bottom_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+                    bottom_frame.pack(fill="x", pady=(10, 0))
+
+                    int_value = tk.IntVar(value=0)
+                    str_value = tk.StringVar(value="0")
+                    max_value = 70000
+
+                    def sync_values(*args):
+                        try:
+                            val = str_value.get()
+                            int_value.set(int(val) if val else 0)
+                        except:
+                            int_value.set(0)
+                    
+                    str_value.trace_add("write", sync_values)
+                    
+                    def validate_input(new_val):
+                        if new_val == "":
+                            return True
+                        if not new_val.isdigit():
+                            return False
+                        if len(new_val) > 5:
+                            return False
+                        if int(new_val) > max_value:
+                            return False
+                        return True
+                    
+                    validation = parent.register(validate_input)
+                    
+                    controls_frame = ctk.CTkFrame(bottom_frame, fg_color="transparent")
+                    controls_frame.pack(fill="x", pady=5)
+                    
+                    # Настройка grid layout
+                    controls_frame.grid_columnconfigure(0, weight=0, minsize=35)
+                    controls_frame.grid_columnconfigure(1, weight=1, minsize=70)
+                    controls_frame.grid_columnconfigure(2, weight=0, minsize=35)
+                    
+                    def update_value(change):
+                        try:
+                            current = str_value.get()
+                            try:
+                                current_num = int(current) if current else 0
+                            except ValueError:
+                                current_num = 0
+                            new_value = max(0, min(max_value, current_num + change))
+                            str_value.set(str(new_value))
+                        except Exception as e:
+                            str_value.set("0")
+
+                    def start_increment(change):
+                        global is_pressed
+                        is_pressed = True
+                        update_value(change)
+                        root.after(100, lambda: repeat_increment(change))
+
+                    def stop_increment():
+                        global is_pressed
+                        is_pressed = False
+
+                    def repeat_increment(change):
+                        if is_pressed:
+                            update_value(change)
+                            root.after(100, lambda: repeat_increment(change))
+
+                    minus_btn = ctk.CTkButton(
+                        controls_frame,
+                        text="-",
+                        width=35,
+                        height=35,
+                        font=("Arial", 16),
+                        fg_color="#e62525",
+                        hover_color="#701c1c",
+                        border_color="#701c1c",
+                        corner_radius=6,
+                        anchor="center"
+                    )
+                    minus_btn.grid(row=0, column=0, padx=(0, 5), sticky="nsew")
+                    minus_btn.bind("<ButtonPress-1>", lambda e: start_increment(-1))
+                    minus_btn.bind("<ButtonRelease-1>", lambda e: stop_increment())
+
+                    entry = ctk.CTkEntry(
+                        controls_frame,
+                        width=70,
+                        height=35,
+                        font=("Arial", 14),
+                        textvariable=str_value,
+                        fg_color="#BE6F24",
+                        border_color="#613e11",
+                        justify="center",
+                        validate="key",
+                        validatecommand=(validation, "%P")
+                    )
+                    entry.grid(row=0, column=1, padx=5, sticky="ew")
+
+                    plus_btn = ctk.CTkButton(
+                        controls_frame,
+                        text="+",
+                        width=35,
+                        height=35,
+                        font=("Arial", 16),
+                        corner_radius=6,
+                        anchor="center"
+                    )
+                    plus_btn.grid(row=0, column=2, padx=(5, 0), sticky="nsew")
+                    plus_btn.bind("<ButtonPress-1>", lambda e: start_increment(1))
+                    plus_btn.bind("<ButtonRelease-1>", lambda e: stop_increment())
+                    
+                    def handle_focus_out(event):
+                        if str_value.get() == "":
+                            str_value.set("0")
+                    
+                    entry.bind("<FocusOut>", handle_focus_out)
+                    
+                    if is_mod_item:
+                        mod_item_entries[item] = int_value
+                    else:
+                        default_item_entries[item] = int_value
+                    
+                    return card_frame
+                
+                def calculate_columns(container_width):
+                    min_card_width = 180
+                    spacing = 10
+                    max_columns = max(1, container_width // (min_card_width + spacing))
+                    if max_columns * (min_card_width + spacing) - spacing <= container_width:
+                        return max_columns, min_card_width
+                    return 1, -1
+                
+                def update_grid(canvas, items_frame, items):
+                    container_width = canvas.winfo_width()
+                    if container_width < 1:
+                        return
+                    
+                    columns, card_width = calculate_columns(container_width)
+                    
+                    for widget in items_frame.grid_slaves():
+                        widget.grid_forget()
+                    
+                    for i, item in enumerate(items):
+                        row = i // columns
+                        col = i % columns
+                        is_mod_item = item in mod_items
+                        card = create_item_card(items_frame, item, is_mod_item)
+                        if card_width == -1:
+                            card.configure(width=container_width - 20)
+                        else:
+                            card.configure(width=card_width)
+                        card.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
+                    
+                    items_frame.update_idletasks()
+                    canvas.configure(scrollregion=canvas.bbox("all"))
+                    
+                    if items_frame.winfo_height() <= canvas.winfo_height():
+                        canvas.yview_moveto(0)
+                        scrollbar.pack_forget()
+                    else:
+                        scrollbar.pack(side="right", fill="y")
+                
+                # Создаем один скроллируемый контейнер для всех предметов
+                canvas = tk.Canvas(content_frame, bg="#3a3a3a", highlightthickness=0)
+                scrollbar = ctk.CTkScrollbar(content_frame, orientation="vertical", command=canvas.yview)
+                canvas.configure(yscrollcommand=scrollbar.set)
+                
+                scrollbar.pack(side="right", fill="y")
+                canvas.pack(side="left", fill="both", expand=True, padx=10, pady=10)
+                
+                items_frame = ctk.CTkFrame(canvas, fg_color="#3a3a3a")
+                canvas.create_window((0, 0), window=items_frame, anchor="nw")
+
+                def on_mousewhell(event):
+                    canvas.yview_scroll(int(-1*(event.delta/120)),"units")
+                canvas.bind_all("<MouseWheel>", on_mousewhell)
+                canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
+                canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
+                
+                # Объединяем все предметы в один список
+                all_items = default_items + mod_items
+                update_grid(canvas, items_frame, all_items)
+                
+                canvas.bind("<Configure>", lambda e: update_grid(canvas, items_frame, all_items))
+                items_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+                
+                footer_frame = ctk.CTkFrame(main_frame, height=70, fg_color="#3a3a3a", corner_radius=8)
+                footer_frame.pack(fill="x", pady=(15, 0))
+                
+                btn_frame = ctk.CTkFrame(footer_frame, fg_color="transparent")
+                btn_frame.pack(expand=True, pady=15)
+
+                def save_requirements():
+                    requirements = []
+                    
+                    for item, var in default_item_entries.items():
+                        amount = var.get()
+                        if amount > 0:
+                            requirements.append({"item": item, "amount": amount})
+                    
+                    for item, var in mod_item_entries.items():
+                        amount = var.get()
+                        if amount > 0:
+                            requirements.append({"item": item, "amount": amount})
+                    
+                    if not requirements:
+                        messagebox.showwarning("Ошибка", "Вы не добавили ни одного ресурса!")
+                        return
+                    
+                    block_data["requirements"] = requirements
+                    
+                    try:
+                        block_type = block_data.get("type")
+                        content_folder = os.path.join("mindustry_mod_creator", "mods", mod_name, "content", "blocks", block_type)
+                        os.makedirs(content_folder, exist_ok=True)
+                        
+                        # Создаем окно прогресса и блокируем кнопки
+                        progress_window = ctk.CTkToplevel(root)
+                        progress_window.title("Загрузка текстур")
+                        progress_window.geometry("400x150")
+                        progress_window.transient(root)
+                        progress_window.grab_set()
+                        progress_window.protocol("WM_DELETE_WINDOW", lambda: None)  # Блокируем закрытие
+                        
+                        progress_label = ctk.CTkLabel(progress_window, text="Подготовка к загрузке...")
+                        progress_label.pack(pady=10)
+                        
+                        progress_bar = ctk.CTkProgressBar(progress_window, width=300)
+                        progress_bar.pack(pady=10)
+                        progress_bar.set(0)
+                        
+                        status_label = ctk.CTkLabel(progress_window, text="0/0")
+                        status_label.pack(pady=5)
+                        
+                        # Блокируем кнопки в основном окне
+                        for child in btn_frame.winfo_children():
+                            child.configure(state="disabled")
+                        
+                        # Список текстур для загрузки
+                        texture_names = [
+                            "container", "container-team"
+                        ]
+                        
+                        sprite_folder = os.path.join("mindustry_mod_creator", "mods", mod_name, "sprites", block_type, block_name)
+                        os.makedirs(sprite_folder, exist_ok=True)
+                        
+                        base_url = "https://raw.githubusercontent.com/Anuken/Mindustry/master/core/assets-raw/sprites/blocks/storage/"
+                        total_files = len(texture_names)
+                        downloaded = 0
+                        
+                        def update_progress():
+                            nonlocal downloaded
+                            progress = (downloaded) / total_files
+                            progress_bar.set(progress)
+                            status_label.configure(text=f"{downloaded}/{total_files}")
+                            progress_window.update()
+                        
+                        def resize_image(image_path, size_multiplier):
+                            """Изменяет размер изображения согласно множителю (1=32px, 2=64px, ...)"""
+                            from PIL import Image
+                            try:
+                                original_size = 32  # Базовый размер текстур Mindustry
+                                new_size = original_size * size_multiplier
+                                
+                                img = Image.open(image_path)
+                                if img.size != (new_size, new_size):
+                                    img = img.resize((new_size, new_size), Image.Resampling.LANCZOS)
+                                    img.save(image_path)
+                            except Exception as e:
+                                print(f"Ошибка при изменении размера {image_path}: {e}")
+                        
+                        def download_textures():
+                            nonlocal downloaded
+                            try:
+                                size_multiplier = int(block_data.get("size", 1))  # Получаем множитель из block_data
+                                if size_multiplier < 1 or size_multiplier > 15:
+                                    size_multiplier = 1  # Защита от недопустимых значений
+                                
+                                for name in texture_names:
+                                    new_name = name.replace("container", block_name, 1)
+                                    texture_path = os.path.join(sprite_folder, f"{new_name}.png")
+                                    
+                                    if not os.path.exists(texture_path):
+                                        texture_url = f"{base_url}{name}.png"
+                                        try:
+                                            urllib.request.urlretrieve(texture_url, texture_path)
+                                            # Изменяем размер после загрузки
+                                            resize_image(texture_path, size_multiplier)
+                                            progress_label.configure(text=f"Загружено: {new_name}.png")
+                                        except Exception as e:
+                                            progress_label.configure(text=f"Ошибка: {new_name}.png")
+                                    
+                                    downloaded += 1
+                                    progress_window.after(100, update_progress)
+                                
+                                # После завершения загрузки
+                                progress_window.after(100, lambda: finish_saving())
+                            
+                            except Exception as e:
+                                progress_window.after(100, lambda: error_occurred(str(e)))
+                        
+                        def finish_saving():
+                            try:
+                                block_path = os.path.join(content_folder, f"{block_name}.json")
+                                with open(block_path, "w", encoding="utf-8") as f:
+                                    json.dump(block_data, f, indent=4, ensure_ascii=False)
+                                
+                                progress_window.destroy()
+                                for child in btn_frame.winfo_children():
+                                    child.configure(state="normal")
+                                
+                                messagebox.showinfo("Успех", f"Конвейер '{block_name}' успешно сохранён!")
+                                создание_кнопки()
+                            
+                            except Exception as e:
+                                error_occurred(str(e))
+                        
+                        def error_occurred(error_msg):
+                            progress_window.destroy()
+                            for child in btn_frame.winfo_children():
+                                child.configure(state="normal")
+                            messagebox.showerror("Ошибка", f"Не удалось сохранить конвейер: {error_msg}")
+                        
+                        # Запускаем загрузку в отдельном потоке
+                        threading.Thread(target=download_textures, daemon=True).start()
+                    except Exception as e:
+                        messagebox.showerror("Ошибка", f"Неизвестная ошибка: {str(e)}")
+                    
+                    except Exception as e:
+                        messagebox.showerror("Ошибка", f"Не удалось начать сохранение: {str(e)}")
+                
+                ctk.CTkButton(btn_frame, 
+                            text="Сохранить", 
+                            width=140, 
+                            height=45,
+                            font=("Arial", 14),
+                            command=save_requirements).pack(side="left", padx=20)
+                
+                ctk.CTkButton(btn_frame, 
+                            text="Отмена", 
+                            width=140, 
+                            height=45,
+                            font=("Arial", 14),
+                            fg_color="#e62525", 
+                            hover_color="#701c1c", border_color="#701c1c",
+                            command=создание_кнопки).pack(side="left", padx=20)
+
             #/////////////////////////////////////////////////////////////////////////////////
             def cb_wall_create():
                 clear_window()
@@ -4727,19 +5758,9 @@ class MindustryModCreator:
                 with open(resource_path(os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
-                ctk.CTkLabel(root, text="Исследования для открытия").pack()
-                research_parent_entry = ctk.CTkComboBox(
-                    root,
-                    values=CACHE_FILE.get("wall", []),
-                    state="readonly",
-                    width=250
-                )
-                research_parent_entry.pack()
-
                 def save_wall():
                     name = entry_name.get().strip().replace(" ", "_")
                     description = entry_desc.get().strip()
-                    parent_value = research_parent_entry.get()
                     try:
                         health = int(entry_health.get())
                         size = int(entry_size.get())
@@ -4764,7 +5785,7 @@ class MindustryModCreator:
                         "type": "wall",
                         "requirements": [],
                         "research": { 
-                            "parent": parent_value,
+                            "parent": "",
                             "requirements": [],
                             "objectives": []
                         }
@@ -4808,19 +5829,9 @@ class MindustryModCreator:
                 with open(resource_path(os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
-                ctk.CTkLabel(root, text="Исследования для открытия").pack()
-                research_parent_entry = ctk.CTkComboBox(
-                    root,
-                    values=CACHE_FILE.get("conveyor", []),
-                    state="readonly",
-                    width=250
-                )
-                research_parent_entry.pack()
-
                 def save_conveyor():
                     name = entry_name.get().strip().replace(" ", "_")
                     description = entry_desc.get().strip()
-                    parent_value = research_parent_entry.get()
                     try:
                         health = int(entry_health.get())
                         speed1 = int(entry_speed.get())
@@ -4850,7 +5861,7 @@ class MindustryModCreator:
                         "type": "conveyor",
                         "requirements": [],
                         "research": {
-                            "parent": parent_value,
+                            "parent": "",
                             "requirements": [],
                             "objectives": []
                         }
@@ -4873,43 +5884,20 @@ class MindustryModCreator:
             def cb_GenericCrafter_create():
                 clear_window()
                 
-                # Устанавливаем серый фон
-                root.configure(fg_color="#2b2b2b")
-                
-                # Главный контейнер с вертикальным расположением элементов
-                main_container = ctk.CTkFrame(root)
-                main_container.pack(pady=20, padx=20, fill="both", expand=True)
-                
-                # Контейнер для содержимого (будет расширяться)
-                content_frame = ctk.CTkFrame(main_container)
-                content_frame.pack(fill="both", expand=True)
-                
-                # Создаем TabView внутри content_frame
-                tabview = ctk.CTkTabview(content_frame, width=600)
-                tabview.pack(fill="both", expand=True, pady=(0, 10))
-                
-                # Добавляем вкладки
-                tabview.add("Основные настройки")
-                tabview.add("Эффекты")
-                
-                # ===== Первая страница (Основные настройки) =====
-                main_frame = tabview.tab("Основные настройки")
-                
-                # Все элементы управления
-                ctk.CTkLabel(main_frame, text="Имя завода", font=("Arial", 12)).pack()
-                entry_name = ctk.CTkEntry(main_frame, width=350)
+                ctk.CTkLabel(root, text="Имя завода").pack()
+                entry_name = ctk.CTkEntry(root, width=350)
                 entry_name.pack()
 
-                ctk.CTkLabel(main_frame, text="Описание", font=("Arial", 12)).pack()
-                entry_desc = ctk.CTkEntry(main_frame, width=350)
+                ctk.CTkLabel(root, text="Описание").pack()
+                entry_desc = ctk.CTkEntry(root, width=350)
                 entry_desc.pack()
 
-                ctk.CTkLabel(main_frame, text="ХП (макс. 1.000.000)", font=("Arial", 12)).pack()
-                entry_health = ctk.CTkEntry(main_frame, width=150)
+                ctk.CTkLabel(root, text="ХП (макс. 1.000.000)").pack()
+                entry_health = ctk.CTkEntry(root, width=150)
                 entry_health.pack()
 
-                ctk.CTkLabel(main_frame, text="Размер (макс. 15)", font=("Arial", 12)).pack()
-                entry_size = ctk.CTkEntry(main_frame, width=150)
+                ctk.CTkLabel(root, text="Размер (макс. 15)").pack()
+                entry_size = ctk.CTkEntry(root, width=150)
                 entry_size.pack()
 
                 # Чекбокс включения энергии
@@ -4923,38 +5911,23 @@ class MindustryModCreator:
                         label_energy_input.pack_forget()
                         entry_energy_input.pack_forget()
 
-                ctk.CTkCheckBox(main_frame, text="Использует энергию", variable=power_enabled, command=toggle_power_entry).pack(pady=6)
+                ctk.CTkCheckBox(root, text="Использует энергию", variable=power_enabled, command=toggle_power_entry).pack(pady=6)
 
-                label_energy_input = ctk.CTkLabel(main_frame, text="Потребление энергии")
-                entry_energy_input = ctk.CTkEntry(main_frame, width=150)
+                label_energy_input = ctk.CTkLabel(root, text="Потребление энергии")
+                entry_energy_input = ctk.CTkEntry(root, width=150)
                 label_energy_input.pack_forget()
                 entry_energy_input.pack_forget()
 
-                ctk.CTkLabel(main_frame, text="Введите скорость производства 1 предмета в 1 секунду").pack()
-                entry_time_input = ctk.CTkEntry(main_frame, width=150)
+                ctk.CTkLabel(root, text="Введите скорость производства 1 предмета в 1 секунду").pack()
+                entry_time_input = ctk.CTkEntry(root, width=150)
                 entry_time_input.pack()
 
                 with open(resource_path(os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
-                ctk.CTkLabel(main_frame, text="Исследования для открытия").pack()
-                research_parent_entry = ctk.CTkComboBox(
-                    main_frame,
-                    values=CACHE_FILE.get("GenericCrafter", []),
-                    state="readonly",
-                    width=250
-                )
-                research_parent_entry.pack()
-
-                # ===== Вторая страница (Эффекты) =====
-                effects_frame = tabview.tab("Эффекты")
-                ctk.CTkLabel(effects_frame, text="Здесь будут настройки эффектов (пока пусто)").pack(pady=50)
-
                 def save_GenericCrafter():
                     name = entry_name.get().strip().replace(" ", "_")
                     description = entry_desc.get().strip()
-                    parent_value = research_parent_entry.get()
-
                     try:
                         health = int(entry_health.get())
                         size = int(entry_size.get())
@@ -4994,7 +5967,6 @@ class MindustryModCreator:
                         "craftTime": time_craft,
                         "itemCapacity": 50,
                         "LiduidCapacity": 50,
-                        "updateEffect": "smeltsmoke",
                         "category": "crafting",
                         "type": "GenericCrafter",
                         "requirements": [],
@@ -5002,7 +5974,7 @@ class MindustryModCreator:
                         "outputItems": [],
                         "outputLiquids": [],
                         "research": {
-                            "parent": parent_value,
+                            "parent": "",
                             "requirements": [],
                             "objectives": []
                         }
@@ -5019,37 +5991,9 @@ class MindustryModCreator:
 
                     open_item_GenericCrafter_editor(name, block_data)
 
-                # Фрейм для кнопок внизу окна
-                buttons_frame = ctk.CTkFrame(main_container)
-                buttons_frame.pack(fill="x", pady=(10, 0))  # Прижимаем к низу
-                
-                # Стиль для кнопок
-                button_style = {
-                    "width": 150,
-                    "height": 40,
-                    "font": ("Arial", 14, "bold"),
-                    "corner_radius": 8
-                }
+                ctk.CTkButton(root, text="⬅️ Назад", command=lambda: create_block(mod_name)).pack(pady=20)
 
-                # Кнопка Назад (слева)
-                ctk.CTkButton(
-                    buttons_frame,
-                    text="Назад",
-                    command=lambda: create_block(mod_name),
-                    fg_color="#d44646",
-                    hover_color="#ff6b6b",
-                    **button_style
-                ).pack(side="left", padx=10, pady=5)
-
-                # Кнопка Сохранить (справа)
-                ctk.CTkButton(
-                    buttons_frame,
-                    text="💾 Сохранить",
-                    command=save_GenericCrafter,
-                    fg_color="#2e8b57",
-                    hover_color="#3cb371",
-                    **button_style
-                ).pack(side="right", padx=10, pady=5)
+                ctk.CTkButton(root, text="💾 Сохранить", command=save_GenericCrafter).pack(pady=20)
 
             def cb_solarpanel_create():
                 clear_window()
@@ -5078,19 +6022,9 @@ class MindustryModCreator:
                 with open(resource_path(os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
-                ctk.CTkLabel(root, text="Исследования для открытия").pack()
-                research_parent_entry = ctk.CTkComboBox(
-                    root,
-                    values=CACHE_FILE.get("SolarGenerator", []),
-                    state="readonly",
-                    width=250
-                )
-                research_parent_entry.pack()
-
                 def save_SolarGenerator():
                     name = entry_name.get().strip().replace(" ", "_")
                     description = entry_desc.get().strip()
-                    parent_value = research_parent_entry.get()
                     try:
                         health = int(entry_health.get())
                         size = int(entry_size.get())
@@ -5120,7 +6054,7 @@ class MindustryModCreator:
                         "type": "SolarGenerator",
                         "requirements": [],
                         "research": { 
-                            "parent": parent_value,
+                            "parent": "",
                             "requirements": [],
                             "objectives": []
                         }
@@ -5169,19 +6103,9 @@ class MindustryModCreator:
                 with open(resource_path(os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
-                ctk.CTkLabel(root, text="Исследования для открытия").pack()
-                research_parent_entry = ctk.CTkComboBox(
-                    root,
-                    values=CACHE_FILE.get("StorageBlock", []),
-                    state="readonly",
-                    width=250
-                )
-                research_parent_entry.pack()
-
                 def save_StorageBlock():
                     name = entry_name.get().strip().replace(" ", "_")
                     description = entry_desc.get().strip()
-                    parent_value = research_parent_entry.get()
                     try:
                         health = int(entry_health.get())
                         size = int(entry_size.get())
@@ -5210,7 +6134,7 @@ class MindustryModCreator:
                         "type": "StorageBlock",
                         "requirements": [],
                         "research": { 
-                            "parent": parent_value,
+                            "parent": "",
                             "requirements": [],
                             "objectives": []
                         }
@@ -5226,7 +6150,7 @@ class MindustryModCreator:
                     if name_exists_in_content(mod_folder, name, "StorageBlock"):
                         return  # Остановить сохранение
 
-                    open_requirements_editor(name, block_data)
+                    open_requirements_editor_storage(name, block_data)
                 
                 ctk.CTkButton(root, text="⬅️ Назад", command=lambda: create_block(mod_name)).pack(pady=20)
 
@@ -5255,19 +6179,9 @@ class MindustryModCreator:
                 with open(resource_path(os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
-                ctk.CTkLabel(root, text="Исследования для открытия").pack()
-                research_parent_entry = ctk.CTkComboBox(
-                    root,
-                    values=CACHE_FILE.get("conduit", []),
-                    state="readonly",
-                    width=250
-                )
-                research_parent_entry.pack()
-
                 def save_conduit():
                     name = entry_name.get().strip().replace(" ", "_")
                     description = entry_desc.get().strip()
-                    parent_value = research_parent_entry.get()
                     try:
                         health = int(entry_health.get())
                         speed1 = int(entry_speed.get())
@@ -5297,7 +6211,7 @@ class MindustryModCreator:
                         "type": "conduit",
                         "requirements": [],
                         "research": {
-                            "parent": parent_value,
+                            "parent": "",
                             "requirements": [],
                             "objectives": []
                         }
@@ -5346,19 +6260,9 @@ class MindustryModCreator:
                 with open(resource_path(os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
-                ctk.CTkLabel(root, text="Исследования для открытия").pack()
-                research_parent_entry = ctk.CTkComboBox(
-                    root,
-                    values=CACHE_FILE.get("ConsumeGenerator", []),
-                    state="readonly",
-                    width=250
-                )
-                research_parent_entry.pack()
-
                 def save_ConsumeGenerator():
                     name = entry_name.get().strip().replace(" ", "_")
                     description = entry_desc.get().strip()
-                    parent_value = research_parent_entry.get()
                     try:
                         health = int(entry_health.get())
                         size = int(entry_size.get())
@@ -5394,7 +6298,7 @@ class MindustryModCreator:
                             "liquids": []
                         },
                         "research": {
-                            "parent": parent_value,
+                            "parent": "",
                             "requirements": [],
                             "objectives": []
                         }
@@ -5449,19 +6353,9 @@ class MindustryModCreator:
                 with open(resource_path(os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
-                ctk.CTkLabel(root, text="Исследования для открытия").pack()
-                research_parent_entry = ctk.CTkComboBox(
-                    root,
-                    values=CACHE_FILE.get("PowerNode", []),
-                    state="readonly",
-                    width=250
-                )
-                research_parent_entry.pack()
-
                 def save_PowerNode():
                     name = entry_name.get().strip().replace(" ", "_")
                     description = entry_desc.get().strip()
-                    parent_value = research_parent_entry.get()
                     range_entry = int(entry_range_1.get())
                     maxnodes = int(entry_connect.get())
                     buffer = int(entry_buffer.get())
@@ -5499,7 +6393,7 @@ class MindustryModCreator:
                         "maxNodes": maxnodes,
                         "range": range_1,
                         "research": { 
-                            "parent": parent_value,
+                            "parent": "",
                             "requirements": [],
                             "objectives": []
                         }
@@ -5548,19 +6442,9 @@ class MindustryModCreator:
                 with open(resource_path(os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
-                ctk.CTkLabel(root, text="Исследования для открытия").pack()
-                research_parent_entry = ctk.CTkComboBox(
-                    root,
-                    values=CACHE_FILE.get("router", []),
-                    state="readonly",
-                    width=250
-                )
-                research_parent_entry.pack()
-
                 def save_router():
                     name = entry_name.get().strip().replace(" ", "_")
                     description = entry_desc.get().strip()
-                    parent_value = research_parent_entry.get()
                     itemCapacity = int(entry_itemCapacity.get())
                     try:
                         health = int(entry_health.get())
@@ -5593,7 +6477,7 @@ class MindustryModCreator:
                         "type": "Router",
                         "requirements": [],
                         "research": {
-                            "parent": parent_value,
+                            "parent": "",
                             "requirements": [],
                             "objectives": []
                         }
@@ -5640,19 +6524,9 @@ class MindustryModCreator:
                 with open(resource_path(os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
-                ctk.CTkLabel(root, text="Исследования для открытия").pack()
-                research_parent_entry = ctk.CTkComboBox(
-                    root,
-                    values=CACHE_FILE.get("Junction", []),
-                    state="readonly",
-                    width=250
-                )
-                research_parent_entry.pack()
-
                 def save_Junction():
                     name = entry_name.get().strip().replace(" ", "_")
                     description = entry_desc.get().strip()
-                    parent_value = research_parent_entry.get()
                     itemCapacity = int(entry_itemCapacity.get())
                     try:
                         health = int(entry_health.get())
@@ -5685,7 +6559,7 @@ class MindustryModCreator:
                         "type": "Junction",
                         "requirements": [],
                         "research": {
-                            "parent": parent_value,
+                            "parent": "",
                             "requirements": [],
                             "objectives": []
                         }
@@ -5728,19 +6602,9 @@ class MindustryModCreator:
                 with open(resource_path(os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
-                ctk.CTkLabel(root, text="Исследования для открытия").pack()
-                research_parent_entry = ctk.CTkComboBox(
-                    root,
-                    values=CACHE_FILE.get("Unloader", []),
-                    state="readonly",
-                    width=250
-                )
-                research_parent_entry.pack()
-
                 def save_Unloader():
                     name = entry_name.get().strip().replace(" ", "_")
                     description = entry_desc.get().strip()
-                    parent_value = research_parent_entry.get()
                     try:
                         health = int(entry_health.get())
                         speed1 = int(entry_speed.get())
@@ -5769,7 +6633,7 @@ class MindustryModCreator:
                         "type": "Unloader",
                         "requirements": [],
                         "research": {
-                            "parent": parent_value,
+                            "parent": "",
                             "requirements": [],
                             "objectives": []
                         }
@@ -5788,7 +6652,7 @@ class MindustryModCreator:
 
                 ctk.CTkButton(root, text="⬅️ Назад", command=lambda: create_block(mod_name)).pack(pady=20)
                 ctk.CTkButton(root, text="💾 Сохранить", command=save_Unloader).pack(pady=20)
-     
+
             def cb_liquid_router_create():
                 clear_window()
 
@@ -5804,7 +6668,7 @@ class MindustryModCreator:
                 entry_health = ctk.CTkEntry(root, width=150)
                 entry_health.pack()
 
-                ctk.CTkLabel(root, text="Вместимоть (макс. 25)").pack()
+                ctk.CTkLabel(root, text="Вместимоть (макс. 500)").pack()
                 entry_itemCapacity = ctk.CTkEntry(root, width=150)
                 entry_itemCapacity.pack()
 
@@ -5812,25 +6676,15 @@ class MindustryModCreator:
                 with open(resource_path(os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
-                ctk.CTkLabel(root, text="Исследования для открытия").pack()
-                research_parent_entry = ctk.CTkComboBox(
-                    root,
-                    values=CACHE_FILE.get("liquid_router", []),
-                    state="readonly",
-                    width=250
-                )
-                research_parent_entry.pack()
-
                 def save_router():
                     name = entry_name.get().strip().replace(" ", "_")
                     description = entry_desc.get().strip()
-                    parent_value = research_parent_entry.get()
                     itemCapacity = int(entry_itemCapacity.get())
                     try:
                         health = int(entry_health.get())
                         if health > 500000 or health < 1:
                              raise ValueError
-                        if itemCapacity > 25 or itemCapacity < 1:
+                        if itemCapacity > 500 or itemCapacity < 1:
                             raise ValueError
                     except ValueError:
                         messagebox.showerror("Ошибка", "Введите корректные числа!")
@@ -5850,7 +6704,7 @@ class MindustryModCreator:
                         "type": "LiquidRouter",
                         "requirements": [],
                         "research": {
-                            "parent": parent_value,
+                            "parent": "",
                             "requirements": [],
                             "objectives": []
                         }
@@ -5889,19 +6743,9 @@ class MindustryModCreator:
                 with open(resource_path(os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
-                ctk.CTkLabel(root, text="Исследования для открытия").pack()
-                research_parent_entry = ctk.CTkComboBox(
-                    root,
-                    values=CACHE_FILE.get("Liquid_Junction", []),
-                    state="readonly",
-                    width=250
-                )
-                research_parent_entry.pack()
-
                 def save_Junction():
                     name = entry_name.get().strip().replace(" ", "_")
                     description = entry_desc.get().strip()
-                    parent_value = research_parent_entry.get()
                     try:
                         health = int(entry_health.get())
                         if health > 500000 or health < 1:
@@ -5923,7 +6767,7 @@ class MindustryModCreator:
                         "type": "LiquidJunction",
                         "requirements": [],
                         "research": {
-                            "parent": parent_value,
+                            "parent": "",
                             "requirements": [],
                             "objectives": []
                         }
@@ -5942,6 +6786,177 @@ class MindustryModCreator:
 
                 ctk.CTkButton(root, text="⬅️ Назад", command=lambda: create_block(mod_name)).pack(pady=20)
                 ctk.CTkButton(root, text="💾 Сохранить", command=save_Junction).pack(pady=20)
+        
+            def cb_battery_create():
+                clear_window()
+
+                ctk.CTkLabel(root, text="Имя батарейки").pack()
+                entry_name = ctk.CTkEntry(root, width=350)
+                entry_name.pack()
+
+                ctk.CTkLabel(root, text="Описание").pack()
+                entry_desc = ctk.CTkEntry(root, width=350)
+                entry_desc.pack()
+
+                ctk.CTkLabel(root, text="ХП (макс. 500.000)").pack()
+                entry_health = ctk.CTkEntry(root, width=150)
+                entry_health.pack()
+
+                ctk.CTkLabel(root, text="Размер (макс. 15)").pack()
+                entry_size = ctk.CTkEntry(root, width=150)
+                entry_size.pack()
+
+                ctk.CTkLabel(root, text="Вместимоть (макс. 10.000.000)").pack()
+                entry_powerBuffered = ctk.CTkEntry(root, width=150)
+                entry_powerBuffered.pack()
+
+                # Чтение cache.json
+                with open(resource_path(os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")), "r", encoding="utf-8") as f:
+                    CACHE_FILE = json.load(f)
+
+                def save_router():
+                    name = entry_name.get().strip().replace(" ", "_")
+                    description = entry_desc.get().strip()
+                    powerBuffered = int(entry_powerBuffered.get())
+                    try:
+                        health = int(entry_health.get())
+                        size = int(entry_size.get())
+                        if health > 500000 or health < 1:
+                             raise ValueError
+                        if powerBuffered > 10000000 or powerBuffered < 1:
+                            raise ValueError
+                        if size > 15 or size < 1:
+                            raise ValueError
+                    except ValueError:
+                        messagebox.showerror("Ошибка", "Введите корректные числа!")
+                        return
+
+                    if not name or not description:
+                        messagebox.showerror("Ошибка", "Все поля должны быть заполнены!")
+                        return
+
+                    router_data = {
+                        "name": name,
+                        "description": description,
+                        "health": health,
+                        "size": size,
+                        "consumes": {
+                            "powerBuffered": powerBuffered
+                        },
+                        "category": "power",
+                        "type": "Battery",
+                        "requirements": [],
+                        "research": {
+                            "parent": "",
+                            "requirements": [],
+                            "objectives": []
+                        }
+                    }
+
+                    if name not in CACHE_FILE.get("Battery", []):
+                        CACHE_FILE["Battery"].append(name)
+
+                    with open(resource_path(os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")), "w", encoding="utf-8") as f:
+                        json.dump(CACHE_FILE, f, indent=4, ensure_ascii=False)
+
+                    if name_exists_in_content(mod_folder, name, "Battery"):
+                        return  # Остановить сохранение
+
+                    open_requirements_editor_battery(name, router_data)
+
+                ctk.CTkButton(root, text="⬅️ Назад", command=lambda: create_block(mod_name)).pack(pady=20)
+                ctk.CTkButton(root, text="💾 Сохранить", command=save_router).pack(pady=20)
+
+            def cb_thermalgenerator_create():
+                clear_window()
+
+                ctk.CTkLabel(root, text="Имя генератора").pack()
+                entry_name = ctk.CTkEntry(root, width=350)
+                entry_name.pack()
+
+                ctk.CTkLabel(root, text="Описание").pack()
+                entry_desc = ctk.CTkEntry(root, width=350)
+                entry_desc.pack()
+
+                ctk.CTkLabel(root, text="ХП (макс. 1.000.000)").pack()
+                entry_health = ctk.CTkEntry(root, width=150)
+                entry_health.pack()
+
+                ctk.CTkLabel(root, text="Размер (макс. 15)").pack()
+                entry_size = ctk.CTkEntry(root, width=150)
+                entry_size.pack()
+
+                ctk.CTkLabel(root, text="Выработка энергии (макс. 5.000.000)").pack()
+                entry_energy_input = ctk.CTkEntry(root, width=150)
+                entry_energy_input.pack()
+
+                # ✅ Чтение cache.json
+                with open(resource_path(os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")), "r", encoding="utf-8") as f:
+                    CACHE_FILE = json.load(f)
+
+                ctk.CTkLabel(root, text="Исследования для открытия").pack()
+                research_parent_entry = ctk.CTkComboBox(
+                    root,
+                    values=CACHE_FILE.get("ThermalGenerator", []),
+                    state="readonly",
+                    width=250
+                )
+                research_parent_entry.pack()
+
+                def save_ThermalGenerator():
+                    name = entry_name.get().strip().replace(" ", "_")
+                    description = entry_desc.get().strip()
+                    parent_value = research_parent_entry.get()
+                    try:
+                        health = int(entry_health.get())
+                        size = int(entry_size.get())
+                        energy_raw = float(entry_energy_input.get())
+                        power_production = energy_raw / 60
+                        if health > 1000000 or health < 1:
+                            raise ValueError
+                        if size > 15 or size < 1:
+                            raise ValueError
+                        if energy_raw > 1000000 or energy_raw < 1:
+                            raise ValueError
+                    except ValueError:
+                        messagebox.showerror("Ошибка", "Введите корректные числа!")
+                        return
+
+                    if not name or not description:
+                        messagebox.showerror("Ошибка", "Все поля должны быть заполнены!")
+                        return
+
+                    block_data = {
+                        "name": name,
+                        "description": description,
+                        "health": health,
+                        "size": size,
+                        "category": "power",
+                        "powerProduction": power_production,
+                        "type": "ThermalGenerator",
+                        "requirements": [],
+                        "research": { 
+                            "parent": parent_value,
+                            "requirements": [],
+                            "objectives": []
+                        }
+                    }
+
+                    if name not in CACHE_FILE.get("ThermalGenerator", []):
+                        CACHE_FILE["ThermalGenerator"].append(name)
+
+                    with open(resource_path(os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")), "w", encoding="utf-8") as f:
+
+                        json.dump(CACHE_FILE, f, indent=4, ensure_ascii=False)  # ✅
+
+                    if name_exists_in_content(mod_folder, name, "ThermalGenerator"):
+                        return  # Остановить сохранение
+
+                    open_requirements_editor(name, block_data)
+                
+                ctk.CTkButton(root, text="⬅️ Назад", command=lambda: create_block(mod_name)).pack(pady=20)
+
+                ctk.CTkButton(root, text="💾 Сохранить", command=save_ThermalGenerator).pack(pady=20)
 
         # Создание главного окна 
         root = ctk.CTk()
