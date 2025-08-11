@@ -6897,7 +6897,6 @@ class MindustryModCreator:
                 def save_ThermalGenerator():
                     name = entry_name.get().strip().replace(" ", "_")
                     description = entry_desc.get().strip()
-                    parent_value = research_parent_entry.get()
                     try:
                         health = int(entry_health.get())
                         size = int(entry_size.get())
@@ -6927,7 +6926,7 @@ class MindustryModCreator:
                         "type": "ThermalGenerator",
                         "requirements": [],
                         "research": { 
-                            "parent": parent_value,
+                            "parent": "",
                             "requirements": [],
                             "objectives": []
                         }
