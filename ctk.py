@@ -6894,15 +6894,6 @@ class MindustryModCreator:
                 with open(resource_path(os.path.join("mindustry_mod_creator", "cache", f"{mod_name}.json")), "r", encoding="utf-8") as f:
                     CACHE_FILE = json.load(f)
 
-                ctk.CTkLabel(root, text="Исследования для открытия").pack()
-                research_parent_entry = ctk.CTkComboBox(
-                    root,
-                    values=CACHE_FILE.get("ThermalGenerator", []),
-                    state="readonly",
-                    width=250
-                )
-                research_parent_entry.pack()
-
                 def save_ThermalGenerator():
                     name = entry_name.get().strip().replace(" ", "_")
                     description = entry_desc.get().strip()
