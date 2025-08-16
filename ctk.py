@@ -1066,10 +1066,17 @@ class MindustryModCreator:
                 history = []
                 history_index = -1
                 is_drawing = False
-                templates_dir = os.path.join("mindustry_mod_creator", "icons", "paint")
+
+                if item is not None:
+                    if "full_path" in item:
+                        if "items" in item["full_path"]:
+                            content_type = "items"
+                        elif "liquids" in item["full_path"]:
+                            content_type = "liquids"
+                
+                templates_dir = os.path.join("mindustry_mod_creator", "icons", "paint", content_type)
                 os.makedirs(templates_dir, exist_ok=True)
                 
-                # Определяем путь для сохранения
                 if item is None:
                     save_dir = os.path.join("mindustry_mod_creator", "icons", "paint")
                     os.makedirs(save_dir, exist_ok=True)
@@ -1318,7 +1325,7 @@ class MindustryModCreator:
                                 })
                     
                     if not templates:
-                        messagebox.showinfo("Шаблоны", "В папке шаблонов нет изображений")
+                        messagebox.showinfo("Шаблоны", f"В папке шаблонов ({content_type}) нет изображений")
                         return
                     
                     template_window = ctk.CTkToplevel(paint_window)
@@ -6056,146 +6063,151 @@ class MindustryModCreator:
         # Заголовок списка модов
         ctk.CTkLabel(mods_frame, text="Ваши моды", font=("Arial", 14)).pack(pady=5)
 
-        icons_folder_paint = os.path.join("mindustry_mod_creator", "icons", "paint")
         def load_all_icons_paint(parent_window=None):
-                # Конфигурация загрузки items с указанием полных путей
-                download_configs = [
-                    (
-                        "https://raw.githubusercontent.com/Anuken/Mindustry/master/core/assets-raw/sprites/",
-                        {
-                            "copper": "items/item-copper.png",
-                            "beryllium": "items/item-beryllium.png",
-                            "carbide": "items/item-carbide.png",
-                            "fissile-matter": "items/item-fissile-matter.png",
-                            "oxide": "items/item-oxide.png",
-                            "tungsten": "items/item-tungsten.png",
-                            "dormant-cyst": "items/item-dormant-cyst.png",
-                            "lead": "items/item-lead.png",
-                            "metaglass": "items/item-metaglass.png",
-                            "graphite": "items/item-graphite.png",
-                            "sand": "items/item-sand.png",
-                            "coal": "items/item-coal.png",
-                            "titanium": "items/item-titanium.png",
-                            "thorium": "items/item-thorium.png",
-                            "scrap": "items/item-scrap.png",
-                            "silicon": "items/item-silicon.png",
-                            "plastanium": "items/item-plastanium.png",
-                            "phase-fabric": "items/item-phase-fabric.png",
-                            "surge-alloy": "items/item-surge-alloy.png",
-                            "spore-pod": "items/item-spore-pod.png",
-                            "pyratite": "items/item-pyratite.png",
+            # Конфигурация загрузки items с указанием полных путей
+            download_configs = [
+                (
+                    "https://raw.githubusercontent.com/Anuken/Mindustry/master/core/assets-raw/sprites/",
+                    {
+                        "copper": "items/item-copper.png",
+                        "beryllium": "items/item-beryllium.png",
+                        "carbide": "items/item-carbide.png",
+                        "fissile-matter": "items/item-fissile-matter.png",
+                        "oxide": "items/item-oxide.png",
+                        "tungsten": "items/item-tungsten.png",
+                        "dormant-cyst": "items/item-dormant-cyst.png",
+                        "lead": "items/item-lead.png",
+                        "metaglass": "items/item-metaglass.png",
+                        "graphite": "items/item-graphite.png",
+                        "sand": "items/item-sand.png",
+                        "coal": "items/item-coal.png",
+                        "titanium": "items/item-titanium.png",
+                        "thorium": "items/item-thorium.png",
+                        "scrap": "items/item-scrap.png",
+                        "silicon": "items/item-silicon.png",
+                        "plastanium": "items/item-plastanium.png",
+                        "phase-fabric": "items/item-phase-fabric.png",
+                        "surge-alloy": "items/item-surge-alloy.png",
+                        "spore-pod": "items/item-spore-pod.png",
+                        "pyratite": "items/item-pyratite.png",
+                    },
+                    os.path.join("mindustry_mod_creator", "icons", "paint", "items"),
+                    False
+                ),
+                (
+                    "https://raw.githubusercontent.com/Anuken/Mindustry/master/core/assets-raw/sprites/",
+                    {
+                        "arkycite": "items/liquid-arkycite.png",
+                        "water": "items/liquid-water.png",
+                        "slag": "items/liquid-slag.png",
+                        "oil": "items/liquid-oil.png",
+                        "neoplasm": "items/liquid-neoplasm.png",
+                        "cyanogen": "items/liquid-cyanogen.png",
+                        "cryofluid": "items/liquid-cryofluid.png"
+                    },
+                    os.path.join("mindustry_mod_creator", "icons", "paint", "liquids"),
+                    False
+                )
+            ]
 
-                            "arkycite": "items/liquid-arkycite.png",
-                            "water": "items/liquid-water.png",
-                            "slag": "items/liquid-slag.png",
-                            "oil": "items/liquid-oil.png",
-                            "neoplasm": "items/liquid-neoplasm.png",
-                            "cyanogen": "items/liquid-cyanogen.png",
-                            "cryofluid": "items/liquid-cryofluid.png"
-                        },
-                        False
-                    )
-                ]
+            # Создаем папки для иконок, если их нет
+            for config in download_configs:
+                os.makedirs(config[2], exist_ok=True)
 
-                # Создаем папку для иконок, если ее нет
-                os.makedirs(icons_folder_paint, exist_ok=True)
+            # Подсчет общего количества иконок (только тех, которых нет)
+            total_icons = 0
+            download_tasks = []
 
-                # Проверяем, какие файлы уже существуют
-                existing_files = set(os.listdir(icons_folder_paint)) if os.path.exists(icons_folder_paint) else set()
+            for base_url, name_icons, icons_folder, is_item in download_configs:
+                existing_files = set(os.listdir(icons_folder)) if os.path.exists(icons_folder) else set()
+                if isinstance(name_icons, dict):
+                    for name, path in name_icons.items():
+                        if f"{name}.png" not in existing_files:
+                            total_icons += 1
+                            download_tasks.append((base_url + path, os.path.join(icons_folder, f"{name}.png"), name))
 
-                # Подсчет общего количества иконок (только тех, которых нет)
-                total_icons = 0
-                download_tasks = []
+            if total_icons == 0:
+                return True
 
-                for base_url, name_icons, is_item in download_configs:
-                    if isinstance(name_icons, dict):
-                        for name, path in name_icons.items():
-                            if f"{name}.png" not in existing_files:
-                                total_icons += 1
-                                download_tasks.append((base_url + path, os.path.join(icons_folder_paint, f"{name}.png"), name))
+            # Инициализация окна прогресса
+            if parent_window:
+                progress_window = ctk.CTkToplevel(parent_window)
+                progress_window.title("Загрузка иконок")
+                progress_window.geometry("400x150")
+                progress_window.transient(parent_window)
+                progress_window.grab_set()
+                
+                progress_label = ctk.CTkLabel(progress_window, text=f"Загрузка {total_icons} иконок...")
+                progress_label.pack(pady=10)
+                
+                progress_bar = ctk.CTkProgressBar(progress_window, width=300)
+                progress_bar.pack(pady=10)
+                progress_bar.set(0)
+                
+                status_label = ctk.CTkLabel(progress_window, text="0/0")
+                status_label.pack(pady=5)
+                
+                progress_window.update()
 
-                if total_icons == 0:
-                    return True
+            downloaded = 0
+            errors = []
 
-                # Инициализация окна прогресса
+            def update_progress(current, total, name):
                 if parent_window:
-                    progress_window = ctk.CTkToplevel(parent_window)
-                    progress_window.title("Загрузка иконок")
-                    progress_window.geometry("400x150")
-                    progress_window.transient(parent_window)
-                    progress_window.grab_set()
-                    
-                    progress_label = ctk.CTkLabel(progress_window, text=f"Загрузка {total_icons} иконок...")
-                    progress_label.pack(pady=10)
-                    
-                    progress_bar = ctk.CTkProgressBar(progress_window, width=300)
-                    progress_bar.pack(pady=10)
-                    progress_bar.set(0)
-                    
-                    status_label = ctk.CTkLabel(progress_window, text="0/0")
-                    status_label.pack(pady=5)
-                    
+                    progress = (current + 1) / total
+                    progress_bar.set(progress)
+                    status_label.configure(text=f"{current + 1}/{total} - {name}.png")
+                    progress_label.configure(text=f"Загружается: {name}.png")
                     progress_window.update()
 
-                downloaded = 0
-                errors = []
-
-                def update_progress(current, total, name):
-                    if parent_window:
-                        progress = (current + 1) / total
-                        progress_bar.set(progress)
-                        status_label.configure(text=f"{current + 1}/{total} - {name}.png")
-                        progress_label.configure(text=f"Загружается: {name}.png")
-                        progress_window.update()
-
-                def download_file(url, save_path, name):
-                    try:
-                        urllib.request.urlretrieve(url, save_path)
-                        return True, name
-                    except Exception as e:
-                        return False, (name, str(e))
-
+            def download_file(url, save_path, name):
                 try:
-                    # Используем ThreadPoolExecutor для параллельной загрузки (4 потока)
-                    with ThreadPoolExecutor(max_workers=4) as executor:
-                        futures = {executor.submit(download_file, url, path, name): (url, path, name) for url, path, name in download_tasks}
-                        
-                        for future in as_completed(futures):
-                            url, path, name = futures[future]
-                            success, result = future.result()
-                            
-                            if success:
-                                downloaded += 1
-                                if parent_window:
-                                    update_progress(downloaded, total_icons, name)
-                            else:
-                                errors.append(result)
-                                downloaded += 1
-                                if parent_window:
-                                    progress_label.configure(text=f"Ошибка: {name}.png")
-
-                    # Вывод ошибок, если они есть
-                    if errors:
-                        error_msg = "\n".join(f"{name}: {error}" for name, error in errors)
-                        if parent_window:
-                            messagebox.showwarning("Ошибки загрузки", f"Не удалось загрузить некоторые иконки:\n{error_msg}")
-                        else:
-                            print(f"Ошибки загрузки:\n{error_msg}")
-
-                    if parent_window:
-                        progress_label.configure(text="Загрузка завершена!")
-                        progress_window.after(2000, progress_window.destroy)
-                        
-                    return True
-                    
+                    urllib.request.urlretrieve(url, save_path)
+                    return True, name
                 except Exception as e:
-                    error_msg = f"Критическая ошибка: {str(e)}"
+                    return False, (name, str(e))
+
+            try:
+                # Используем ThreadPoolExecutor для параллельной загрузки (4 потока)
+                with ThreadPoolExecutor(max_workers=4) as executor:
+                    futures = {executor.submit(download_file, url, path, name): (url, path, name) for url, path, name in download_tasks}
+                    
+                    for future in as_completed(futures):
+                        url, path, name = futures[future]
+                        success, result = future.result()
+                        
+                        if success:
+                            downloaded += 1
+                            if parent_window:
+                                update_progress(downloaded, total_icons, name)
+                        else:
+                            errors.append(result)
+                            downloaded += 1
+                            if parent_window:
+                                progress_label.configure(text=f"Ошибка: {name}.png")
+
+                # Вывод ошибок, если они есть
+                if errors:
+                    error_msg = "\n".join(f"{name}: {error}" for name, error in errors)
                     if parent_window:
-                        progress_label.configure(text=error_msg)
-                        messagebox.showerror("Ошибка", error_msg)
+                        messagebox.showwarning("Ошибки загрузки", f"Не удалось загрузить некоторые иконки:\n{error_msg}")
                     else:
-                        print(error_msg)
-                    return False
+                        print(f"Ошибки загрузки:\n{error_msg}")
+
+                if parent_window:
+                    progress_label.configure(text="Загрузка завершена!")
+                    progress_window.after(2000, progress_window.destroy)
+                    
+                return True
+                
+            except Exception as e:
+                error_msg = f"Критическая ошибка: {str(e)}"
+                if parent_window:
+                    progress_label.configure(text=error_msg)
+                    messagebox.showerror("Ошибка", error_msg)
+                else:
+                    print(error_msg)
+                return False
         load_all_icons_paint(root)
 
         def on_mod_click(mod_name):
