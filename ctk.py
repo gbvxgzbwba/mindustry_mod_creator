@@ -12,6 +12,7 @@ from PIL import Image, ImageTk
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tkinter import messagebox
 from copy import deepcopy
+from tkinter import colorchooser, messagebox
 
 sys.dont_write_bytecode = True
 
@@ -1050,6 +1051,425 @@ class MindustryModCreator:
                 canvas.bind("<Configure>", lambda e: (on_canvas_configure(e), update_columns(e)))
                 update_columns()
 
+            def paint(item=None):
+                """Редактор пиксельной графики 32x32 с шаблонами"""
+                ctk.set_default_color_theme("blue")  # Или "green", "dark-blue" — встроенные темы
+                # Глобальные переменные
+                global current_color, grid_size, cell_size, canvas_size, current_tool, history, history_index, is_drawing, save_path
+                
+                # Настройки редактора
+                current_color = "#000000"
+                grid_size = 32
+                cell_size = 20
+                canvas_size = grid_size * cell_size
+                current_tool = "pencil"
+                history = []
+                history_index = -1
+                is_drawing = False
+                templates_dir = os.path.join("mindustry_mod_creator", "icons", "paint")
+                os.makedirs(templates_dir, exist_ok=True)
+                
+                # Определяем путь для сохранения
+                if item is None:
+                    save_dir = os.path.join("mindustry_mod_creator", "icons", "paint")
+                    os.makedirs(save_dir, exist_ok=True)
+                    save_path = os.path.join(save_dir, "new_image.png")
+                    item_name = "new_image"
+                else:
+                    item_name = item.get("name", "unnamed")
+                    content_type = item.get("type", "items")
+                    
+                    possible_paths = [
+                        os.path.join(mod_folder, "sprites", content_type, item_name, f"{item_name}.png"),
+                        os.path.join(mod_folder, "sprites", content_type, f"{item_name}.png"),
+                        os.path.join(mod_folder, "sprites", "items", f"{item_name}.png"),
+                        os.path.join(mod_folder, "sprites", "liquids", f"{item_name}.png"),
+                        os.path.join(os.path.dirname(item.get("full_path", "")), f"{item_name}.png")
+                    ]
+                    
+                    for path in possible_paths:
+                        if os.path.exists(path):
+                            save_path = path
+                            break
+                    else:
+                        save_dir = os.path.dirname(item.get("full_path", mod_folder))
+                        os.makedirs(save_dir, exist_ok=True)
+                        save_path = os.path.join(save_dir, f"{item_name}.png")
+
+                # --- Функции истории ---
+                def save_state():
+                    global history, history_index
+                    
+                    if history_index < len(history) - 1:
+                        history = history[:history_index + 1]
+                    
+                    state = []
+                    for x in range(grid_size):
+                        row = []
+                        for y in range(grid_size):
+                            items = canvas.find_withtag(f"pixel_{x}_{y}")
+                            color = None
+                            if items:
+                                color = canvas.itemcget(items[0], "fill")
+                            row.append(color)
+                        state.append(row)
+                    
+                    history.append(state)
+                    history_index = len(history) - 1
+
+                def undo():
+                    global history_index
+                    if history_index > 0:
+                        history_index -= 1
+                        restore_state()
+
+                def redo():
+                    global history_index
+                    if history_index < len(history) - 1:
+                        history_index += 1
+                        restore_state()
+
+                def restore_state():
+                    state = history[history_index]
+                    canvas.delete("all")
+                    draw_grid()
+                    
+                    for x in range(grid_size):
+                        for y in range(grid_size):
+                            if state[x][y] is not None:
+                                canvas.create_rectangle(
+                                    x * cell_size, y * cell_size,
+                                    (x + 1) * cell_size, (y + 1) * cell_size,
+                                    fill=state[x][y], outline="", tags=f"pixel_{x}_{y}"
+                                )
+
+                # --- Основные функции рисования ---
+                def start_drawing(event):
+                    global is_drawing
+                    is_drawing = True
+                    draw_pixel(event)
+                    save_state()
+
+                def draw_pixel(event):
+                    if not is_drawing:
+                        return
+                        
+                    x = event.x // cell_size
+                    y = event.y // cell_size
+                    if 0 <= x < grid_size and 0 <= y < grid_size:
+                        canvas.delete(f"pixel_{x}_{y}")
+                        if current_tool == "eraser":
+                            return
+                        elif current_tool in ["pencil", "fill"]:
+                            canvas.create_rectangle(
+                                x * cell_size, y * cell_size,
+                                (x + 1) * cell_size, (y + 1) * cell_size,
+                                fill=current_color, outline="", tags=f"pixel_{x}_{y}"
+                            )
+
+                def stop_drawing(event):
+                    global is_drawing
+                    is_drawing = False
+                    save_state()
+
+                def flood_fill(x, y, target_color, replacement_color):
+                    if target_color == replacement_color:
+                        return
+                    if x < 0 or x >= grid_size or y < 0 or y >= grid_size:
+                        return
+                    
+                    items = canvas.find_withtag(f"pixel_{x}_{y}")
+                    current_pixel_color = None
+                    if items:
+                        current_pixel_color = canvas.itemcget(items[0], "fill")
+                    
+                    if current_pixel_color != target_color:
+                        return
+                    
+                    canvas.delete(f"pixel_{x}_{y}")
+                    canvas.create_rectangle(
+                        x * cell_size, y * cell_size,
+                        (x + 1) * cell_size, (y + 1) * cell_size,
+                        fill=replacement_color, outline="", tags=f"pixel_{x}_{y}"
+                    )
+                    
+                    flood_fill(x+1, y, target_color, replacement_color)
+                    flood_fill(x-1, y, target_color, replacement_color)
+                    flood_fill(x, y+1, target_color, replacement_color)
+                    flood_fill(x, y-1, target_color, replacement_color)
+
+                def handle_click(event):
+                    x = event.x // cell_size
+                    y = event.y // cell_size
+                    if 0 <= x < grid_size and 0 <= y < grid_size:
+                        if current_tool == "fill":
+                            save_state()
+                            items = canvas.find_withtag(f"pixel_{x}_{y}")
+                            target_color = None
+                            if items:
+                                target_color = canvas.itemcget(items[0], "fill")
+                            flood_fill(x, y, target_color, current_color)
+                            save_state()
+                        else:
+                            start_drawing(event)
+
+                def change_color():
+                    global current_color
+                    color = colorchooser.askcolor(title="Выберите цвет", initialcolor=current_color)
+                    if color[1]:
+                        current_color = color[1]
+                        color_button.configure(fg_color=current_color)
+                        set_tool("pencil")
+
+                def clear_canvas():
+                    canvas.delete("all")
+                    draw_grid()
+                    save_state()
+
+                def draw_grid():
+                    # Темно-серый фон
+                    canvas.configure(bg="#e0e0e0")
+                    for i in range(grid_size + 1):
+                        # Вертикальные линии (толщина 2 пикселя)
+                        canvas.create_line(
+                            i * cell_size, 0, 
+                            i * cell_size, canvas_size, 
+                            fill="#d0d0d0", width=2  # ← Добавлен параметр width
+                        )
+                        # Горизонтальные линии (толщина 2 пикселя)
+                        canvas.create_line(
+                            0, i * cell_size, 
+                            canvas_size, i * cell_size, 
+                            fill="#d0d0d0", width=2  # ← Добавлен параметр width
+                        )
+
+                def save_image():
+                    img = Image.new("RGBA", (grid_size, grid_size), (0, 0, 0, 0))
+                    pixels = img.load()
+                    
+                    for x in range(grid_size):
+                        for y in range(grid_size):
+                            items = canvas.find_withtag(f"pixel_{x}_{y}")
+                            if items:
+                                color = canvas.itemcget(items[0], "fill")
+                                if color:
+                                    try:
+                                        r, g, b = tuple(int(color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
+                                        pixels[x, y] = (r, g, b, 255)
+                                    except:
+                                        pixels[x, y] = (0, 0, 0, 255)
+                    
+                    img.save(save_path)
+                    messagebox.showinfo("Сохранено", f"Изображение сохранено в:\n{save_path}")
+
+                def set_tool(tool):
+                    global current_tool
+                    current_tool = tool
+                    
+                    pencil_button.configure(fg_color="#2b2b2b")
+                    eraser_button.configure(fg_color="#2b2b2b")
+                    fill_button.configure(fg_color="#2b2b2b")
+                    
+                    if tool == "pencil":
+                        pencil_button.configure(fg_color="#1f6aa5")
+                    elif tool == "eraser":
+                        eraser_button.configure(fg_color="#1f6aa5")
+                    elif tool == "fill":
+                        fill_button.configure(fg_color="#1f6aa5")
+
+                def load_template_image(path):
+                    try:
+                        img = Image.open(path)
+                        
+                        if img.size != (32, 32):
+                            img = img.resize((32, 32), Image.NEAREST)
+                        
+                        if img.mode != "RGBA":
+                            img = img.convert("RGBA")
+                        
+                        pixels = img.load()
+                        
+                        clear_canvas()
+                        
+                        for x in range(32):
+                            for y in range(32):
+                                pixel = pixels[x, y]
+                                if len(pixel) == 4:
+                                    r, g, b, a = pixel
+                                    if a > 0:
+                                        color = f"#{r:02x}{g:02x}{b:02x}"
+                                        canvas.create_rectangle(
+                                            x * cell_size, y * cell_size,
+                                            (x + 1) * cell_size, (y + 1) * cell_size,
+                                            fill=color, outline="", tags=f"pixel_{x}_{y}"
+                                        )
+                        save_state()
+                    except Exception as e:
+                        messagebox.showerror("Ошибка", f"Не удалось загрузить шаблон: {e}")
+
+                def show_templates():
+                    templates = []
+                    if os.path.exists(templates_dir):
+                        for file in os.listdir(templates_dir):
+                            if file.endswith(".png"):
+                                templates.append({
+                                    "name": file[:-4],
+                                    "path": os.path.join(templates_dir, file)
+                                })
+                    
+                    if not templates:
+                        messagebox.showinfo("Шаблоны", "В папке шаблонов нет изображений")
+                        return
+                    
+                    template_window = ctk.CTkToplevel(paint_window)
+                    template_window.title("Выберите шаблон")
+                    template_window.geometry("600x400")
+                    
+                    scroll_frame = ctk.CTkScrollableFrame(template_window)
+                    scroll_frame.pack(fill="both", expand=True, padx=10, pady=10)
+                    
+                    for template in templates:
+                        try:
+                            img = Image.open(template["path"])
+                            img = img.resize((64, 64), Image.NEAREST)
+                            ctk_img = ctk.CTkImage(light_image=img, size=(64, 64))
+                            
+                            frame = ctk.CTkFrame(scroll_frame)
+                            frame.pack(fill="x", pady=5)
+                            
+                            ctk.CTkLabel(frame, image=ctk_img, text="").pack(side="left", padx=10)
+                            ctk.CTkLabel(frame, text=template["name"], font=("Arial", 14)).pack(side="left", padx=10)
+                            
+                            def load_template(path=template["path"]):
+                                load_template_image(path)
+                                template_window.destroy()
+                            
+                            ctk.CTkButton(frame, text="Загрузить", command=load_template).pack(side="right", padx=10)
+                        except Exception as e:
+                            print(f"Ошибка загрузки шаблона {template['name']}: {e}")
+
+                # --- Создание интерфейса ---
+                paint_window = ctk.CTkToplevel(root)
+                paint_window.title(f"32x32 Pixel Editor - {item_name}")
+                paint_window.resizable(False, False)
+
+                canvas = ctk.CTkCanvas(paint_window, bg="#e0e0e0", width=canvas_size, height=canvas_size, highlightthickness=0)
+                canvas.pack()
+
+                tool_frame = ctk.CTkFrame(paint_window, fg_color="transparent")
+                tool_frame.pack(fill="x", pady=(10, 0))
+
+                ctk.CTkButton(
+                    tool_frame,
+                    text="< Отмена",
+                    command=undo,
+                    width=80,
+                    fg_color="#555555",
+                    hover_color="#444444"
+                ).pack(side="left", padx=2)
+
+                ctk.CTkButton(
+                    tool_frame,
+                    text="Повтор >",
+                    command=redo,
+                    width=80,
+                    fg_color="#555555",
+                    hover_color="#444444"
+                ).pack(side="left", padx=2)
+
+                pencil_button = ctk.CTkButton(
+                    tool_frame, 
+                    text="Карандаш",
+                    command=lambda: set_tool("pencil"),
+                    width=80,
+                    fg_color="#1f6aa5"
+                )
+                pencil_button.pack(side="left", padx=5)
+
+                eraser_button = ctk.CTkButton(
+                    tool_frame,
+                    text="Ластик",
+                    command=lambda: set_tool("eraser"),
+                    width=80
+                )
+                eraser_button.pack(side="left", padx=5)
+
+                fill_button = ctk.CTkButton(
+                    tool_frame,
+                    text="Заливка",
+                    command=lambda: set_tool("fill"),
+                    width=80
+                )
+                fill_button.pack(side="left", padx=5)
+
+                color_button = ctk.CTkButton(
+                    tool_frame, 
+                    text="Цвет", 
+                    command=change_color,
+                    fg_color=current_color,
+                    hover_color=current_color,
+                    width=80
+                )
+                color_button.pack(side="left", padx=5)
+
+                ctk.CTkButton(
+                    tool_frame,
+                    text="Очистить",
+                    command=clear_canvas,
+                    width=80
+                ).pack(side="left", padx=5)
+
+                ctk.CTkButton(
+                    tool_frame,
+                    text="Шаблоны",
+                    command=show_templates,
+                    width=80,
+                    fg_color="#4CAF50",
+                    hover_color="#388E3C"
+                ).pack(side="left", padx=5)
+
+                ctk.CTkButton(
+                    tool_frame,
+                    text="Сохранить",
+                    command=save_image,
+                    width=80
+                ).pack(side="left", padx=5)
+
+                canvas.bind("<B1-Motion>", draw_pixel)
+                canvas.bind("<Button-1>", handle_click)
+                canvas.bind("<ButtonRelease-1>", stop_drawing)
+
+                draw_grid()
+
+                ctk.ThemeManager.theme = theme_test
+                
+                if os.path.exists(save_path):
+                    try:
+                        img = Image.open(save_path)
+                        if img.size != (grid_size, grid_size):
+                            img = img.resize((grid_size, grid_size), Image.NEAREST)
+                        
+                        if img.mode != "RGBA":
+                            img = img.convert("RGBA")
+                        
+                        pixels = img.load()
+                        for x in range(grid_size):
+                            for y in range(grid_size):
+                                r, g, b, a = pixels[x, y]
+                                if a > 0:
+                                    color = f"#{r:02x}{g:02x}{b:02x}"
+                                    canvas.create_rectangle(
+                                        x * cell_size, y * cell_size,
+                                        (x + 1) * cell_size, (y + 1) * cell_size,
+                                        fill=color, outline="", tags=f"pixel_{x}_{y}"
+                                    )
+                        save_state()
+                    except Exception as e:
+                        print(f"Ошибка загрузки изображения: {e}")
+                        save_state()
+                else:
+                    save_state()
+
             global mod_folder
             mod_folder = os.path.join("mindustry_mod_creator", "mods", f"{mod_name}")
             
@@ -1188,60 +1608,66 @@ class MindustryModCreator:
                     # Загрузка иконки
                     try:
                         # Особый случай для conduit
-                        if item["type"] == "conduit":
+                        if "type" in item and item["type"] == "conduit":
                             img_path = os.path.join(mod_folder, "sprites", "conduit", item["name"], f"{item['name']}-top-0.png")
                             img = ctk.CTkImage(Image.open(img_path), size=(80, 80)) if os.path.exists(img_path) else None
                         else:
-                            # Первый путь: sprites/{type}/{name}/
-                            img_path = os.path.join(mod_folder, "sprites", 
-                                                item["type"] if content_type == "blocks" else content_type,
-                                                item["name"], f"{item['name']}.png")
-                            img = ctk.CTkImage(Image.open(img_path), size=(80, 80)) if os.path.exists(img_path) else None
+                            # Определяем тип контента
+                            sprite_type = item["type"] if "type" in item else content_type
                             
-                            # Если не найдено, пробуем второй путь: sprites/{type}/
-                            if img is None:
-                                img_path = os.path.join(mod_folder, "sprites", 
-                                                    item["type"] if content_type == "blocks" else content_type,
-                                                    f"{item['name']}.png")
-                                img = ctk.CTkImage(Image.open(img_path), size=(80, 80)) if os.path.exists(img_path) else None
-                    except:
+                            # Возможные пути для поиска изображения
+                            possible_paths = [
+                                # Для блоков
+                                os.path.join(mod_folder, "sprites", sprite_type, item["name"], f"{item['name']}.png"),
+                                os.path.join(mod_folder, "sprites", sprite_type, f"{item['name']}.png"),
+                                # Для предметов и жидкостей
+                                os.path.join(mod_folder, "sprites", "items", item["name"], f"{item['name']}.png"),
+                                os.path.join(mod_folder, "sprites", "items", f"{item['name']}.png"),
+                                os.path.join(mod_folder, "sprites", "liquids", item["name"], f"{item['name']}.png"),
+                                os.path.join(mod_folder, "sprites", "liquids", f"{item['name']}.png"),
+                                # Общий путь для всех типов
+                                os.path.join(mod_folder, "sprites", f"{item['name']}.png")
+                            ]
+                            
+                            # Проверяем все возможные пути
+                            img = None
+                            for path in possible_paths:
+                                if os.path.exists(path):
+                                    try:
+                                        img = ctk.CTkImage(Image.open(path), size=(80, 80))
+                                        break
+                                    except:
+                                        continue
+                    except Exception as e:
+                        print(f"Ошибка загрузки изображения: {e}")
                         img = None
                     
                     ctk.CTkLabel(card, image=img, text="X" if not img else "", 
                                 font=("Arial", 40) if not img else None).pack(pady=(10, 5))
                     
-                    if content_type == "blocks":
-                        ctk.CTkLabel(card, text=item["type"], font=("Arial", 12, "bold"),
-                                    ).pack(pady=(0, 5))
+                    if "type" in item:
+                        ctk.CTkLabel(card, text=item["type"], font=("Arial", 12, "bold")).pack(pady=(0, 5))
                     
                     ctk.CTkLabel(card, text=item["name"], font=("Arial", 12, "bold"),
                                 wraplength=CARD_WIDTH-20).pack(pady=(0, 15))
                     
                     # Контекстное меню
-                    if content_type in ["items", "liquids"]:
-                        menu = tk.Menu(root, tearoff=0)
-                        menu.add_command(label="Удалить", command=lambda: delete_item(item, content_type))
-                        menu.add_command(label="Редактировать JSON", command=lambda: edit_item_json(item["full_path"]))
-                        
-                        def show_menu(e):
-                            try: menu.tk_popup(e.x_root, e.y_root)
-                            finally: menu.grab_release()
-                        
-                        card.bind("<Button-3>", show_menu)
-                        card.bind("<Double-Button-1>", lambda e: edit_item_json(item["full_path"]))
+                    menu = tk.Menu(root, tearoff=0)
+                    menu.add_command(label="Удалить", command=lambda: delete_item(item, content_type))
+                    menu.add_command(label="Редактировать JSON", command=lambda: edit_item_json(item["full_path"]))
                     
-                    if content_type in ["blocks"]:
-                        menu = tk.Menu(root, tearoff=0)
-                        menu.add_command(label="Удалить", command=lambda: delete_item(item, content_type))
-                        menu.add_command(label="Редактировать JSON", command=lambda: edit_item_json(item["full_path"]))
-                        menu.add_command(label="Редактировать исследования", command=lambda: [setattr(root, 'current_block_item', item), edit_requirements_from_parent()])
-                        
-                        def show_menu(e):
-                            try: menu.tk_popup(e.x_root, e.y_root)
-                            finally: menu.grab_release()
-                        
-                        card.bind("<Button-3>", show_menu)
-                        card.bind("<Double-Button-1>", lambda e: edit_item_json(item["full_path"]))
+                    if content_type in ["items", "liquids"]:
+                        menu.add_command(label="Редактор фото", command=lambda item=item: paint(item))
+                    elif content_type == "blocks":
+                        menu.add_command(label="Редактировать исследования", 
+                                        command=lambda: [setattr(root, 'current_block_item', item), edit_requirements_from_parent()])
+                    
+                    def show_menu(e):
+                        try: menu.tk_popup(e.x_root, e.y_root)
+                        finally: menu.grab_release()
+                    
+                    card.bind("<Button-3>", show_menu)
+                    card.bind("<Double-Button-1>", lambda e: edit_item_json(item["full_path"]))
                     
                     return card
 
@@ -1497,7 +1923,148 @@ class MindustryModCreator:
             icons_dir = os.path.join("mindustry_mod_creator", "icons")
             os.makedirs(icons_dir, exist_ok=True)
             icons_folder = os.path.join("mindustry_mod_creator", "icons")
+            icons_folder_paint = os.path.join("mindustry_mod_creator", "icons", "paint")
 
+            def load_all_icons_paint(parent_window=None):
+                # Конфигурация загрузки items с указанием полных путей
+                download_configs = [
+                    (
+                        "https://raw.githubusercontent.com/Anuken/Mindustry/master/core/assets-raw/sprites/",
+                        {
+                            "copper": "items/item-copper.png",
+                            "beryllium": "items/item-beryllium.png",
+                            "carbide": "items/item-carbide.png",
+                            "fissile-matter": "items/item-fissile-matter.png",
+                            "oxide": "items/item-oxide.png",
+                            "tungsten": "items/item-tungsten.png",
+                            "dormant-cyst": "items/item-dormant-cyst.png",
+                            "lead": "items/item-lead.png",
+                            "metaglass": "items/item-metaglass.png",
+                            "graphite": "items/item-graphite.png",
+                            "sand": "items/item-sand.png",
+                            "coal": "items/item-coal.png",
+                            "titanium": "items/item-titanium.png",
+                            "thorium": "items/item-thorium.png",
+                            "scrap": "items/item-scrap.png",
+                            "silicon": "items/item-silicon.png",
+                            "plastanium": "items/item-plastanium.png",
+                            "phase-fabric": "items/item-phase-fabric.png",
+                            "surge-alloy": "items/item-surge-alloy.png",
+                            "spore-pod": "items/item-spore-pod.png",
+                            "pyratite": "items/item-pyratite.png",
+
+                            "arkycite": "items/liquid-arkycite.png",
+                            "water": "items/liquid-water.png",
+                            "slag": "items/liquid-slag.png",
+                            "oil": "items/liquid-oil.png",
+                            "neoplasm": "items/liquid-neoplasm.png",
+                            "cyanogen": "items/liquid-cyanogen.png",
+                            "cryofluid": "items/liquid-cryofluid.png"
+                        },
+                        False
+                    )
+                ]
+
+                # Создаем папку для иконок, если ее нет
+                os.makedirs(icons_folder_paint, exist_ok=True)
+
+                # Проверяем, какие файлы уже существуют
+                existing_files = set(os.listdir(icons_folder_paint)) if os.path.exists(icons_folder_paint) else set()
+
+                # Подсчет общего количества иконок (только тех, которых нет)
+                total_icons = 0
+                download_tasks = []
+
+                for base_url, name_icons, is_item in download_configs:
+                    if isinstance(name_icons, dict):
+                        for name, path in name_icons.items():
+                            if f"{name}.png" not in existing_files:
+                                total_icons += 1
+                                download_tasks.append((base_url + path, os.path.join(icons_folder_paint, f"{name}.png"), name))
+
+                if total_icons == 0:
+                    return True
+
+                # Инициализация окна прогресса
+                if parent_window:
+                    progress_window = ctk.CTkToplevel(parent_window)
+                    progress_window.title("Загрузка иконок")
+                    progress_window.geometry("400x150")
+                    progress_window.transient(parent_window)
+                    progress_window.grab_set()
+                    
+                    progress_label = ctk.CTkLabel(progress_window, text=f"Загрузка {total_icons} иконок...")
+                    progress_label.pack(pady=10)
+                    
+                    progress_bar = ctk.CTkProgressBar(progress_window, width=300)
+                    progress_bar.pack(pady=10)
+                    progress_bar.set(0)
+                    
+                    status_label = ctk.CTkLabel(progress_window, text="0/0")
+                    status_label.pack(pady=5)
+                    
+                    progress_window.update()
+
+                downloaded = 0
+                errors = []
+
+                def update_progress(current, total, name):
+                    if parent_window:
+                        progress = (current + 1) / total
+                        progress_bar.set(progress)
+                        status_label.configure(text=f"{current + 1}/{total} - {name}.png")
+                        progress_label.configure(text=f"Загружается: {name}.png")
+                        progress_window.update()
+
+                def download_file(url, save_path, name):
+                    try:
+                        urllib.request.urlretrieve(url, save_path)
+                        return True, name
+                    except Exception as e:
+                        return False, (name, str(e))
+
+                try:
+                    # Используем ThreadPoolExecutor для параллельной загрузки (4 потока)
+                    with ThreadPoolExecutor(max_workers=4) as executor:
+                        futures = {executor.submit(download_file, url, path, name): (url, path, name) for url, path, name in download_tasks}
+                        
+                        for future in as_completed(futures):
+                            url, path, name = futures[future]
+                            success, result = future.result()
+                            
+                            if success:
+                                downloaded += 1
+                                if parent_window:
+                                    update_progress(downloaded, total_icons, name)
+                            else:
+                                errors.append(result)
+                                downloaded += 1
+                                if parent_window:
+                                    progress_label.configure(text=f"Ошибка: {name}.png")
+
+                    # Вывод ошибок, если они есть
+                    if errors:
+                        error_msg = "\n".join(f"{name}: {error}" for name, error in errors)
+                        if parent_window:
+                            messagebox.showwarning("Ошибки загрузки", f"Не удалось загрузить некоторые иконки:\n{error_msg}")
+                        else:
+                            print(f"Ошибки загрузки:\n{error_msg}")
+
+                    if parent_window:
+                        progress_label.configure(text="Загрузка завершена!")
+                        progress_window.after(2000, progress_window.destroy)
+                        
+                    return True
+                    
+                except Exception as e:
+                    error_msg = f"Критическая ошибка: {str(e)}"
+                    if parent_window:
+                        progress_label.configure(text=error_msg)
+                        messagebox.showerror("Ошибка", error_msg)
+                    else:
+                        print(error_msg)
+                    return False
+            load_all_icons_paint(root)
             def load_all_icons(parent_window=None):
                 # Конфигурация загрузки
                 download_configs = [
@@ -4267,7 +4834,7 @@ class MindustryModCreator:
                     
                     for liquid, var in mod_liquid_entries.items():
                         amount = var.get()
-                        if amount > 0:
+                        if amount > 0: 
                             calculated_amount = round((1 / 60) * amount, 25)
                             consumes_liquids.append({
                                 "liquid": liquid,
@@ -5638,7 +6205,7 @@ class MindustryModCreator:
             
             # Создаем UI как в show_create_ui, но с автоматическим заполнением
             root.geometry("500x500")
-            label = ctk.CTkLabel(root, text="Название папки")
+            label = ctk.CTkLabel(root, text="Названия папка")
             global entry_name
             entry_name = ctk.CTkEntry(root, width=200)
             entry_name.insert(0, mod_name)  # Автоматически заполняем имя мода
@@ -5671,7 +6238,7 @@ class MindustryModCreator:
             for widget in root.winfo_children():
                 widget.destroy()
 
-            label = ctk.CTkLabel(root, text="Название папки")
+            label = ctk.CTkLabel(root, text="Названия папка")
             entry_name = ctk.CTkEntry(root, width=200)
             button_next = ctk.CTkButton(root, text="Далее", command=setup_mod_json)
             
