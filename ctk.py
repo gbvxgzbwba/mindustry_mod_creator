@@ -5283,16 +5283,15 @@ class MindustryModCreator:
                     if block_type in ["router"]:
                         widgets['speed'] = create_field("Скорость (макс. 50)", 150)
 
-                    if block_type in ["conveyor", "conduit", "Unloader"]:
+                    if block_type in ["conveyor", "Unloader", "Junction"]:
                         widgets['speed'] = create_field("Скорость (макс. 50)", 150)
                     
-                    if block_type in ["router", "Junction"]:
+                    if block_type in ["router", "Junction", "conveyor","conduit", "liquid_router"]:
                         widgets['capacity'] = create_field("Вместимость (макс. 25)", 150)
                     
                     if block_type == "PowerNode":
                         widgets['range'] = create_field("Радиус (макс. 100)", 150)
                         widgets['connections'] = create_field("Макс. подключения (макс. 500)", 150)
-                        widgets['buffer'] = create_field("Буфер энергии (макс. 5.000.000)", 150)
                     
                     if block_type in ["SolarGenerator", "ConsumeGenerator", "ThermalGenerator"]:
                         max_energy = 1000000 if block_type == "SolarGenerator" else 5000000
@@ -5332,10 +5331,7 @@ class MindustryModCreator:
                     
                     if block_type in ["Liquid_Tank"]:
                         widgets['liquid_capacity'] = create_field("Вместимость жидкости (макс. 10.000.000)", 150)
-                    
-                    if block_type in ["liquid_router"]:
-                        widgets['liquid_capacity'] = create_field("Вместимость жидкости", 150)
-                    
+                                       
                     if block_type == "Pump":
                         # Чекбокс энергии
                         widgets['power_enabled'] = ctk.BooleanVar(value=False)
@@ -5511,32 +5507,31 @@ class MindustryModCreator:
                             speed = (1 / 60) * speed_val
                             block_data.update({"speed": speed, "displaySpeed": speed})
 
-                        if block_type in ["conveyor", "conduit", "Unloader"]:
+                        if block_type in ["conveyor", "Unloader","Junction"]:
                             speed_val = int(widgets['speed'].get())
                             if speed_val < 1 or speed_val > 50:
                                 raise ValueError("Скорость 1-50")
                             speed = (1 / 60) * speed_val
-                            block_data.update({"speed": speed, "displaySpeed": speed})
                         
-                        if block_type in ["router", "Junction"]:
+                        if block_type in ["router", "Junction","conveyor","conduit","liquid_router"]:
                             capacity = int(widgets['capacity'].get())
                             if capacity < 1 or capacity > 25:
-                                raise ValueError("Вместимость 1-25")
-                            block_data["itemCapacity"] = capacity
+                                    raise ValueError("Вместимость 1-25")
+                            if block_type in ["router", "Junction","conveyor"]:
+                                block_data["itemCapacity"] = capacity
+                            if block_type in ["conduit","liquid_router"]:
+                                block_data["liquidCapacity"] = capacity
                         
                         if block_type == "PowerNode":
                             range_val = int(widgets['range'].get())
                             connections = int(widgets['connections'].get())
-                            buffer_val = int(widgets['buffer'].get())
                             
                             if range_val < 1 or range_val > 100: raise ValueError("Радиус 1-100")
                             if connections < 2 or connections > 500: raise ValueError("Подключения 2-500")
-                            if buffer_val < 1 or buffer_val > 5000000: raise ValueError("Буфер 1-5M")
                             
                             block_data.update({
                                 "range": range_val * 8,
-                                "maxNodes": connections,
-                                "powerBuffer": buffer_val
+                                "maxNodes": connections
                             })
                         
                         if block_type in ["SolarGenerator", "ThermalGenerator"]:
@@ -5602,11 +5597,7 @@ class MindustryModCreator:
                             if range_val < 1 or range_val > 50:
                                 raise ValueError("Радиус 1-50")
                             block_data["range"] = range_val * 8
-                        
-                        if block_type in ["liquid_router"]:
-                            capacity = int(widgets['liquid_capacity'].get())
-                            block_data["liquidCapacity"] = capacity
-                        
+                                               
                         if block_type in ["Liquid_Tank"]:
                             capacity = int(widgets['liquid_capacity'].get())
                             block_data["liquidCapacity"] = capacity
