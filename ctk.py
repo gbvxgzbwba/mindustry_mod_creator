@@ -1,7 +1,7 @@
 import customtkinter as ctk
 import urllib.request
 import shutil
-import json, os, sys
+import json, os, sys, gc
 import zipfile
 import tkinter as tk
 import threading
@@ -10,9 +10,8 @@ import subprocess
 
 from PIL import Image, ImageTk
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from tkinter import messagebox, filedialog
+from tkinter import messagebox, filedialog,colorchooser
 from copy import deepcopy
-from tkinter import colorchooser, messagebox
 
 sys.dont_write_bytecode = True
 
@@ -152,7 +151,21 @@ def load_or_create_cache(mod_name):
         with open(path, "w", encoding="utf-8") as f:
             json.dump(default_cache, f, indent=4, ensure_ascii=False)
         return default_cache
-    
+
+def safe_navigation(target_func, *args):
+    """Простая навигация без задержки"""
+    try:
+        if args:
+            target_func(*args)
+        else:
+            target_func()
+        print(f"Навигации: {target_func}")
+    except Exception as e:
+        print(f"Ошибка навигации: {e}")
+    finally:
+        # Принудительный сбор мусора после выполнения навигации
+        gc.collect()
+
 class MindustryModCreator:
     mod_folder = None
     mod_name = None
@@ -177,7 +190,7 @@ class MindustryModCreator:
                 if result:
                     open_mod_editor(mod_folder, load_existing=True)
                 else:
-                    создание_кнопки()
+                    safe_navigation(создание_кнопки)
             else:
                 open_mod_editor(mod_folder, load_existing=False)
 
@@ -197,7 +210,7 @@ class MindustryModCreator:
             mod_json_path = os.path.join(mod_folder, "mod.json")
 
             if os.path.exists(mod_json_path):
-                    создание_кнопки()
+                safe_navigation(создание_кнопки)
             else:
                 open_mod_editor(mod_folder, load_existing=False)
 
@@ -287,9 +300,10 @@ class MindustryModCreator:
 
             messagebox.showinfo("Успех", f"Файл {mod_json_path} сохранён!")
 
-            создание_кнопки()
+            safe_navigation(создание_кнопки)
 
         def создание_кнопки():
+            clear_window()
             """Главное меню с просмотром контента"""
 
             def delete_item(item, content_type):
@@ -362,7 +376,7 @@ class MindustryModCreator:
                     
                     messagebox.showinfo("Успех", result_msg)
                     # Обновляем интерфейс
-                    создание_кнопки()
+                    safe_navigation(создание_кнопки)
                     
                 except Exception as e:
                     messagebox.showerror("Ошибка", f"Не удалось удалить: {str(e)}")
@@ -788,7 +802,7 @@ class MindustryModCreator:
                             json.dump(block_data, f, indent=4, ensure_ascii=False)
                         
                         messagebox.showinfo("Успех", f"Требования для блока '{block_name}' успешно сохранены!")
-                        создание_кнопки()
+                        safe_navigation(создание_кнопки)
                     
                     except Exception as e:
                         messagebox.showerror("Ошибка", f"Не удалось сохранить требования: {str(e)}")
@@ -808,7 +822,7 @@ class MindustryModCreator:
                             fg_color="#e62525", 
                             hover_color="#701c1c", 
                             border_color="#701c1c",
-                            command=создание_кнопки).pack(side="left", padx=20)
+                            command=safe_navigation(создание_кнопки)).pack(side="left", padx=20)
 
             def edit_requirements_from_parent():
                 """Редактор требований для блока, выбранного в главном меню"""
@@ -1054,7 +1068,7 @@ class MindustryModCreator:
                 
                 ctk.CTkButton(buttons_frame, 
                             text="Отмена", 
-                            command=lambda:создание_кнопки(),
+                            command=lambda:safe_navigation(создание_кнопки),
                             fg_color="#e62525",
                             hover_color="#701c1c").pack(side="right", padx=10)
                 
@@ -1101,7 +1115,27 @@ class MindustryModCreator:
                 """Редактор пиксельной графики 32x32 с шаблонами"""
                 ctk.set_default_color_theme("blue")  # Или "green", "dark-blue" — встроенные темы
                 # Глобальные переменные
-                global current_color, grid_size, cell_size, canvas_size, current_tool, history, history_index, is_drawing, save_path
+                global current_color, grid_size, cell_size, canvas_size, current_tool
+                global history, history_index, is_drawing, save_path
+
+                def on_closing():
+                    """Очистка ресурсов при закрытии окна"""
+                    nonlocal img, canvas, paint_window
+                    
+                    # Явно удаляем изображения
+                    if 'img' in locals():
+                        img.close()
+                    if 'ctk_img' in locals():
+                        ctk_img = None
+                        
+                    # Очищаем canvas
+                    if canvas:
+                        canvas.delete("all")
+                        canvas = None
+                        
+                    # Закрываем окно
+                    paint_window.destroy()
+                    gc.collect()  # Здесь оправдано!
                 
                 # Настройки редактора
                 current_color = "#000000"
@@ -1297,23 +1331,29 @@ class MindustryModCreator:
                         )
 
                 def save_image():
-                    img = Image.new("RGBA", (grid_size, grid_size), (0, 0, 0, 0))
-                    pixels = img.load()
-                    
-                    for x in range(grid_size):
-                        for y in range(grid_size):
-                            items = canvas.find_withtag(f"pixel_{x}_{y}")
-                            if items:
-                                color = canvas.itemcget(items[0], "fill")
-                                if color:
-                                    try:
-                                        r, g, b = tuple(int(color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
-                                        pixels[x, y] = (r, g, b, 255)
-                                    except:
-                                        pixels[x, y] = (0, 0, 0, 255)
-                    
-                    img.save(save_path)
-                    messagebox.showinfo("Сохранено", f"Изображение сохранено в:\n{save_path}")
+                    nonlocal img
+                    try:
+                        img = Image.new("RGBA", (grid_size, grid_size), (0, 0, 0, 0))
+                        img = Image.new("RGBA", (grid_size, grid_size), (0, 0, 0, 0))
+                        pixels = img.load()
+                        
+                        for x in range(grid_size):
+                            for y in range(grid_size):
+                                items = canvas.find_withtag(f"pixel_{x}_{y}")
+                                if items:
+                                    color = canvas.itemcget(items[0], "fill")
+                                    if color:
+                                        try:
+                                            r, g, b = tuple(int(color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
+                                            pixels[x, y] = (r, g, b, 255)
+                                        except:
+                                            pixels[x, y] = (0, 0, 0, 255)
+                        
+                        img.save(save_path)
+                        messagebox.showinfo("Сохранено", f"Изображение сохранено в:\n{save_path}")
+                    finally:
+                        if 'img' in locals():
+                            img.close()
 
                 def set_tool(tool):
                     global current_tool
@@ -1405,6 +1445,7 @@ class MindustryModCreator:
                 paint_window = ctk.CTkToplevel(root)
                 paint_window.title(f"32x32 Pixel Editor - {item_name}")
                 paint_window.resizable(False, False)
+                paint_window.protocol("WM_DELETE_WINDOW", on_closing)
 
                 canvas = ctk.CTkCanvas(paint_window, bg="#e0e0e0", width=canvas_size, height=canvas_size, highlightthickness=0)
                 canvas.pack()
@@ -1566,7 +1607,6 @@ class MindustryModCreator:
             global mod_folder
             mod_folder = os.path.join("mindustry_mod_creator", "mods", f"{mod_name}")
             
-            clear_window()
             root.configure(fg_color="#2b2b2b")
 
             # Основной контейнер
@@ -1955,15 +1995,15 @@ class MindustryModCreator:
                     print("Текстура уже существует.")
 
                 messagebox.showinfo("Успех", f"Предмет '{name}' сохранён!")
-                создание_кнопки()
+                safe_navigation(создание_кнопки)
 
             # Кнопка сохранения
             ctk.CTkButton(root, text="💾 Сохранить предмет", font=("Arial", 12),
                     command=save_item).pack(pady=20)
             ctk.CTkButton(root, text="Назад", font=("Arial", 12),
-                    command=lambda:создание_кнопки()).pack(pady=20)
-            
-        def create_liquid_window():            
+                    command=lambda:safe_navigation(создание_кнопки)).pack(pady=20)
+
+        def create_liquid_window():
             clear_window()
 
             ctk.CTkLabel(root, text="Создание новой жидкости", font=("Arial", 16, "bold")).pack(pady=10)
@@ -2042,13 +2082,13 @@ class MindustryModCreator:
                     print("Текстура уже существует.")
 
                 messagebox.showinfo("Успех", f"Жидкость '{name}' сохранена!")
-                создание_кнопки()
+                safe_navigation(создание_кнопки)
 
             # Кнопка сохранения
             ctk.CTkButton(root, text="💾 Сохранить жидкость", font=("Arial", 12),
                     command=save_liquid).pack(pady=20)
             ctk.CTkButton(root, text="Назад", font=("Arial", 12),
-                    command=lambda:создание_кнопки()).pack(pady=20)
+                    command=lambda:safe_navigation(создание_кнопки)).pack(pady=20)
 
         def name_exists_in_content(mod_folder, name, new_type):
             content_path = os.path.join(mod_folder, "content", "blocks")
@@ -2982,7 +3022,7 @@ class MindustryModCreator:
                                     child.configure(state="normal")
                                 
                                 messagebox.showinfo("Успех", f"Блок '{block_name}' успешно сохранён!")
-                                создание_кнопки()
+                                safe_navigation(создание_кнопки)
                             
                             except Exception as e:
                                 error_occurred(str(e))
@@ -3016,7 +3056,7 @@ class MindustryModCreator:
                             font=("Arial", 14),
                             fg_color="#e62525", 
                             hover_color="#701c1c", border_color="#701c1c",
-                            command=создание_кнопки).pack(side="left", padx=20)
+                            command=lambda:safe_navigation(создание_кнопки)).pack(side="left", padx=20)
 
             def open_item_GenericCrafter_editor(block_name, block_data):
                 clear_window()
@@ -5846,22 +5886,25 @@ class MindustryModCreator:
 
         def on_mod_click(mod_name):
             """Функция, вызываемая при нажатии на мод"""
-            # Уничтожаем текущие виджеты
-            for widget in root.winfo_children():
-                widget.destroy()
-            
-            # Создаем UI как в show_create_ui, но с автоматическим заполнением
-            root.geometry("500x500")
-            label = ctk.CTkLabel(root, text="Названия папка")
-            global entry_name
-            entry_name = ctk.CTkEntry(root, width=200)
-            entry_name.insert(0, mod_name)  # Автоматически заполняем имя мода
-            
-            label.pack(pady=70)
-            entry_name.pack(pady=10)
-            
-            # Автоматически вызываем setup_mod_json без кнопки "Далее"
-            setup_mod_json_auto()
+            try:
+                # Уничтожаем текущие виджеты
+                for widget in root.winfo_children():
+                    widget.destroy()
+                
+                # Создаем UI как в show_create_ui, но с автоматическим заполнением
+                root.geometry("500x500")
+                label = ctk.CTkLabel(root, text="Названия папка")
+                global entry_name
+                entry_name = ctk.CTkEntry(root, width=200)
+                entry_name.insert(0, mod_name)  # Автоматически заполняем имя мода
+                
+                label.pack(pady=70)
+                entry_name.pack(pady=10)
+                
+                # Автоматически вызываем setup_mod_json без кнопки "Далее"
+                setup_mod_json_auto()
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Ошибка открытия: {e}")
 
         # Заполнение списка модами из папки
         mods_dir = os.path.join("mindustry_mod_creator", "mods")
