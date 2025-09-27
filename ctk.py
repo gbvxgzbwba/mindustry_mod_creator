@@ -159,7 +159,7 @@ def safe_navigation(target_func, *args):
             target_func(*args)
         else:
             target_func()
-        print(f"Навигации: {target_func}")
+        #print(f"Навигации: {target_func}")
     except Exception as e:
         print(f"Ошибка навигации: {e}")
     finally:
@@ -334,15 +334,28 @@ class MindustryModCreator:
                     return
 
                 try:
-                    # 1. Удаляем основной файл данных
-                    if os.path.exists(item["full_path"]):
+                    # 1. Удаляем основной файл данных (БЕЗОПАСНО)
+                    try:
                         os.remove(item["full_path"])
+                    except FileNotFoundError:
+                        pass  # Файла и так нет
+                    except Exception as e:
+                        print(f"Ошибка удаления файла: {e}")
 
-                    # 2. Удаляем текстуры (приоритет - удаление папки)
-                    if os.path.exists(texture_folder):
-                        shutil.rmtree(texture_folder)
-                    elif os.path.exists(single_texture):
-                        os.remove(single_texture)
+                    # 2. Удаляем текстуры (БЕЗОПАСНО)
+                    try:
+                        if os.path.exists(texture_folder):
+                            shutil.rmtree(texture_folder)
+                    except Exception as e:
+                        print(f"Ошибка удаления папки: {e}")
+
+                    try:
+                        if os.path.exists(single_texture):
+                            os.remove(single_texture)
+                    except FileNotFoundError:
+                        pass
+                    except Exception as e:
+                        print(f"Ошибка удаления текстуры: {e}")
 
                     # 3. Чистим кэш
                     item_removed = False  # Инициализируем переменную перед использованием
@@ -1068,7 +1081,7 @@ class MindustryModCreator:
                 
                 ctk.CTkButton(buttons_frame, 
                             text="Отмена", 
-                            command=lambda:safe_navigation(создание_кнопки),
+                            command=lambda: safe_navigation(создание_кнопки),
                             fg_color="#e62525",
                             hover_color="#701c1c").pack(side="right", padx=10)
                 
@@ -1621,8 +1634,8 @@ class MindustryModCreator:
             # Кнопки в левой панели
             action_buttons = [
                 ("🧱 Создать блок", lambda: create_block(mod_name)),
-                ("📦 Создать предмет", create_item_window),
-                ("💧 Создать жидкость", create_liquid_window)
+                ("📦 Создать предмет", lambda: create_content_window("item")),
+                ("💧 Создать жидкость", lambda: create_content_window("liquid"))
             ]
 
             action_buttons_2 = [
@@ -1915,180 +1928,183 @@ class MindustryModCreator:
             load_content("Предметы", "items") 
             load_content("Жидкости", "liquids")
 
-        def create_item_window():
-            """Форма для создания предмета"""
+        def create_content_window(content_type="item"):
+            """Универсальная форма для создания предмета или жидкости"""
             clear_window()
 
-            ctk.CTkLabel(root, text="Создание нового предмета", font=("Arial", 16, "bold")).pack(pady=10)
+            # Определяем параметры в зависимости от типа
+            config = {
+                "item": {
+                    "title": "Создание нового предмета",
+                    "fields": [
+                        ("Название предмета", 150),
+                        ("Описание", 150),
+                        ("Воспламеняемость (0-1)", 150),
+                        ("Взрывоопасность (0-1)", 150),
+                        ("Радиоактивность (0-1)", 150),
+                        ("Заряд (0-1)", 150),
+                        ("Цвет (#rrggbb)", 150)
+                    ],
+                    "texture_url": "https://raw.githubusercontent.com/gbvxgzbwba/texture123/main/ore/ore.png",
+                    "sprite_folder": "items",
+                    "content_folder": "items",
+                    "success_msg": "предмет"
+                },
+                "liquid": {
+                    "title": "Создание новой жидкости", 
+                    "fields": [
+                        ("Название жидкости", 150),
+                        ("Описание", 150),
+                        ("Густота (0-1)", 150),
+                        ("Температура (0-1)", 150),
+                        ("Воспламеняемость (0-1)", 150),
+                        ("Взрывоопасность (0-1)", 150),
+                        ("Цвет (#rrggbb)", 150)
+                    ],
+                    "texture_url": "https://raw.githubusercontent.com/Anuken/Mindustry/master/core/assets-raw/sprites/items/liquid-water.png",
+                    "sprite_folder": "liquids",
+                    "content_folder": "liquids", 
+                    "success_msg": "жидкость"
+                }
+            }
+            
+            cfg = config[content_type]
+            
+            ctk.CTkLabel(root, text=cfg["title"], font=("Arial", 16, "bold")).pack(pady=10)
 
             form_frame = ctk.CTkFrame(root)
             form_frame.pack(pady=10)
 
-            fields = [
-                ("Название предмета", 150),
-                ("Описание", 150),
-                ("Воспламеняемость (0-1)", 150),
-                ("Взрывоопасность (0-1)", 150),
-                ("Радиоактивность (0-1)", 150),
-                ("Заряд (0-1)", 150),
-                ("Цвет (#rrggbb)", 150)
-            ]
-
             entries = []
-
-            for i, (label_text, width) in enumerate(fields):
+            for i, (label_text, width) in enumerate(cfg["fields"]):
                 label = ctk.CTkLabel(form_frame, text=label_text)
                 entry = ctk.CTkEntry(form_frame, width=width)
                 label.grid(row=i, column=0, sticky="w", pady=5, padx=10)
                 entry.grid(row=i, column=1, pady=5, padx=10)
                 entries.append(entry)
 
-            # Функция сохранения внутри
-            def save_item():
-                name = entries[0].get().strip().replace(" ", "_")
-                desc = entries[1].get().strip()
-                try:
-                    flammability = float(entries[2].get())
-                    explosiveness = float(entries[3].get())
-                    radioactivity = float(entries[4].get())
-                    charge = float(entries[5].get())
-                except ValueError:
-                    messagebox.showerror("Ошибка", "Числовые значения должны быть от 0 до 1!")
-                    return
-                
-                color = entries[6].get().strip()
+            def safe_download_texture(url, path, max_retries=3):
+                """Безопасная загрузка текстуры с повторными попытками"""
+                import time
+                for attempt in range(max_retries):
+                    try:
+                        # Атомарная проверка и создание папки
+                        os.makedirs(os.path.dirname(path), exist_ok=True)
+                        
+                        # Загружаем во временный файл
+                        temp_path = path + ".tmp"
+                        urllib.request.urlretrieve(url, temp_path)
+                        
+                        # Атомарное перемещение
+                        if os.path.exists(path):
+                            os.remove(path)  # Удаляем старый файл если есть
+                        shutil.move(temp_path, path)
+                        
+                        print(f"Текстура {os.path.basename(path)} загружена")
+                        return True
+                        
+                    except Exception as e:
+                        print(f"Ошибка загрузки (попытка {attempt + 1}): {e}")
+                        # Удаляем временный файл если остался
+                        try:
+                            if os.path.exists(temp_path):
+                                os.remove(temp_path)
+                        except:
+                            pass
+                            
+                        if attempt == max_retries - 1:
+                            return False
+                        time.sleep(1)
+                return False
 
-                if not name or not desc:
+            def save_content():
+                name = entries[0].get().strip().replace(" ", "_")  # ✅ Исходное имя
+                desc = entries[1].get().strip()
+                
+                try:
+                    if content_type == "item":
+                        flammability = float(entries[2].get())
+                        explosiveness = float(entries[3].get())
+                        radioactivity = float(entries[4].get())
+                        charge = float(entries[5].get())
+                        color = entries[6].get().strip()
+                        
+                        # 🔧 ИСПРАВЛЕНИЕ: используем другое имя переменной
+                        for val, field_name in [(flammability, "Воспламеняемость"), 
+                                            (explosiveness, "Взрывоопасность"), 
+                                            (radioactivity, "Радиоактивность"), 
+                                            (charge, "Заряд")]:
+                            if not 0 <= val <= 1:
+                                raise ValueError(f"{field_name} должна быть от 0 до 1")  # ✅ field_name вместо name
+                        
+                        content_data = {
+                            "name": name,  # ✅ name осталось неизменным!
+                            "description": desc,
+                            "flammability": flammability,
+                            "explosiveness": explosiveness, 
+                            "radioactivity": radioactivity,
+                            "charge": charge,
+                            "color": color
+                        }
+                    else:  # liquid
+                        viscosity = float(entries[2].get())
+                        temperature = float(entries[3].get())
+                        flammability = float(entries[4].get())
+                        explosiveness = float(entries[5].get())
+                        color = entries[6].get().strip()
+                        
+                        # 🔧 ТАКОЕ ЖЕ ИСПРАВЛЕНИЕ ДЛЯ ЖИДКОСТИ
+                        for val, field_name in [(viscosity, "Густота"), 
+                                            (temperature, "Температура"),
+                                            (flammability, "Воспламеняемость"), 
+                                            (explosiveness, "Взрывоопасность")]:
+                            if not 0 <= val <= 1:
+                                raise ValueError(f"{field_name} должна быть от 0 до 1")  # ✅ field_name
+                        
+                        content_data = {
+                            "name": name,  # ✅ name осталось корректным!
+                            "description": desc,
+                            "viscosity": viscosity,
+                            "temperature": temperature, 
+                            "flammability": flammability,
+                            "explosiveness": explosiveness,
+                            "color": color
+                        }
+                        
+                except ValueError as e:
+                    messagebox.showerror("Ошибка", str(e))
+                    return
+
+                # Проверка обязательных полей
+                required_fields = [name, desc, color] if content_type == "liquid" else [name, desc]
+                if not all(required_fields):
                     messagebox.showerror("Ошибка", "Все поля должны быть заполнены!")
                     return
 
-                content_folder = os.path.join("mindustry_mod_creator", "mods", mod_name, "content", "items")
+                # Создание папок и сохранение JSON
+                content_folder = os.path.join("mindustry_mod_creator", "mods", mod_name, "content", cfg["content_folder"])
                 os.makedirs(content_folder, exist_ok=True)
 
-                item_data = {
-                    "name": name,
-                    "description": desc,
-                    "flammability": flammability,
-                    "explosiveness": explosiveness,
-                    "radioactivity": radioactivity,
-                    "charge": charge,
-                    "color": color
-                }
+                content_file_path = os.path.join(content_folder, f"{name}.json")  # ✅ Имя файла = name
+                with open(content_file_path, "w", encoding="utf-8") as file:
+                    json.dump(content_data, file, indent=4, ensure_ascii=False)
 
-                item_file_path = os.path.join(content_folder, f"{name}.json")
-                with open(item_file_path, "w", encoding="utf-8") as file:
-                    json.dump(item_data, file, indent=4, ensure_ascii=False)
-
-                # Загрузка текстуры
-                texture_url = "https://raw.githubusercontent.com/gbvxgzbwba/texture123/main/ore/ore.png"  # можно сделать переменной позже
-                sprite_folder = os.path.join("mindustry_mod_creator", "mods", mod_name, "sprites", "items")
-                texture_path = os.path.join(sprite_folder, f"{name}.png")
-                os.makedirs(sprite_folder, exist_ok=True)
-
-                if not os.path.exists(texture_path):
-                    try:
-                        urllib.request.urlretrieve(texture_url, texture_path)
-                        print(f"Текстура {name}.png загружена.")
-                    except Exception as e:
-                        print(f"Ошибка при загрузке текстуры: {e}")
-                else:
-                    print("Текстура уже существует.")
-
-                messagebox.showinfo("Успех", f"Предмет '{name}' сохранён!")
-                safe_navigation(создание_кнопки)
-
-            # Кнопка сохранения
-            ctk.CTkButton(root, text="💾 Сохранить предмет", font=("Arial", 12),
-                    command=save_item).pack(pady=20)
-            ctk.CTkButton(root, text="Назад", font=("Arial", 12),
-                    command=lambda:safe_navigation(создание_кнопки)).pack(pady=20)
-
-        def create_liquid_window():
-            clear_window()
-
-            ctk.CTkLabel(root, text="Создание новой жидкости", font=("Arial", 16, "bold")).pack(pady=10)
-
-            form_frame = ctk.CTkFrame(root)
-            form_frame.pack(pady=10)
-
-            fields = [
-                ("Название жидкости", 150),
-                ("Описание", 150),
-                ("Густота (0-1)", 150),
-                ("Температура (0-1)", 150),
-                ("Воспламеняемость (0-1)", 150),
-                ("Взрывоопасность (0-1)", 150),
-                ("Цвет (#rrggbb)", 150)
-            ]
-
-            entries = []
-
-            for i, (label_text, width) in enumerate(fields):
-                label = ctk.CTkLabel(form_frame, text=label_text)
-                entry = ctk.CTkEntry(form_frame, width=width)
-                label.grid(row=i, column=0, sticky="w", pady=5, padx=10)
-                entry.grid(row=i, column=1, pady=5, padx=10)
-                entries.append(entry)
-
-            def save_liquid():
-                name = entries[0].get().strip().replace(" ", "_")
-                desc = entries[1].get().strip()
-
-                try:
-                    viscosity = float(entries[2].get())
-                    temperature = float(entries[3].get())
-                    flammability = float(entries[4].get())
-                    explosiveness = float(entries[5].get())
-                except ValueError:
-                    messagebox.showerror("Ошибка", "Некорректное числовое значение!")
-                    return
-
-                color = entries[6].get().strip()
-
-                if not name or not desc or not color:
-                    messagebox.showerror("Ошибка", "Все поля должны быть заполнены!")
-                    return
-
-                content_folder = os.path.join("mindustry_mod_creator", "mods", mod_name, "content", "liquids")
-                os.makedirs(content_folder, exist_ok=True)
-
-                liquid_data = {
-                    "name": name,
-                    "description": desc,
-                    "viscosity": viscosity,
-                    "temperature": temperature,
-                    "flammability": flammability,
-                    "explosiveness": explosiveness,
-                    "color": color
-                }
-
-                liquid_file_path = os.path.join(content_folder, f"{name}.json")
-                with open(liquid_file_path, "w", encoding="utf-8") as file:
-                    json.dump(liquid_data, file, indent=4, ensure_ascii=False)
+                # БЕЗОПАСНАЯ загрузка текстуры с именем = name
+                sprite_folder = os.path.join("mindustry_mod_creator", "mods", mod_name, "sprites", cfg["sprite_folder"])
+                texture_path = os.path.join(sprite_folder, f"{name}.png")  # ✅ texture_name = name
                 
-                # Загрузка текстуры
-                texture_url = "https://raw.githubusercontent.com/Anuken/Mindustry/master/core/assets-raw/sprites/items/liquid-water.png"  # можно сделать переменной позже
-                sprite_folder = os.path.join("mindustry_mod_creator", "mods", mod_name, "sprites", "liquids")
-                texture_path = os.path.join(sprite_folder, f"{name}.png")
-                os.makedirs(sprite_folder, exist_ok=True)
+                if not safe_download_texture(cfg["texture_url"], texture_path):
+                    messagebox.showwarning("Предупреждение", 
+                                        f"Текстура для {name} не была загружена. Вы можете добавить её позже.")
 
-                if not os.path.exists(texture_path):
-                    try:
-                        urllib.request.urlretrieve(texture_url, texture_path)
-                        print(f"Текстура {name}.png загружена.")
-                    except Exception as e:
-                        print(f"Ошибка при загрузке текстуры: {e}")
-                else:
-                    print("Текстура уже существует.")
-
-                messagebox.showinfo("Успех", f"Жидкость '{name}' сохранена!")
+                messagebox.showinfo("Успех", f"{cfg['success_msg'].capitalize()} '{name}' сохранён!")
                 safe_navigation(создание_кнопки)
 
-            # Кнопка сохранения
-            ctk.CTkButton(root, text="💾 Сохранить жидкость", font=("Arial", 12),
-                    command=save_liquid).pack(pady=20)
+            # Кнопки
+            ctk.CTkButton(root, text=f"💾 Сохранить {cfg['success_msg']}", font=("Arial", 12),
+                        command=save_content).pack(pady=20)
             ctk.CTkButton(root, text="Назад", font=("Arial", 12),
-                    command=lambda:safe_navigation(создание_кнопки)).pack(pady=20)
+                        command=lambda: safe_navigation(создание_кнопки)).pack(pady=20)
 
         def name_exists_in_content(mod_folder, name, new_type):
             content_path = os.path.join(mod_folder, "content", "blocks")
@@ -2774,9 +2790,9 @@ class MindustryModCreator:
                 items_frame = ctk.CTkFrame(canvas, fg_color="#3a3a3a")
                 canvas.create_window((0, 0), window=items_frame, anchor="nw")
 
-                def on_mousewhell(event):
+                def on_mousewheel(event):
                     canvas.yview_scroll(int(-1*(event.delta/120)),"units")
-                canvas.bind_all("<MouseWheel>", on_mousewhell)
+                canvas.bind_all("<MouseWheel>", on_mousewheel)
                 canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
                 canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
                 
@@ -3056,7 +3072,7 @@ class MindustryModCreator:
                             font=("Arial", 14),
                             fg_color="#e62525", 
                             hover_color="#701c1c", border_color="#701c1c",
-                            command=lambda:safe_navigation(создание_кнопки)).pack(side="left", padx=20)
+                            command=lambda: safe_navigation(создание_кнопки)).pack(side="left", padx=20)
 
             def open_item_GenericCrafter_editor(block_name, block_data):
                 clear_window()
@@ -3310,9 +3326,9 @@ class MindustryModCreator:
                 items_frame = ctk.CTkFrame(canvas, fg_color="#3a3a3a")
                 canvas.create_window((0, 0), window=items_frame, anchor="nw")
 
-                def on_mousewhell(event):
+                def on_mousewheel(event):
                     canvas.yview_scroll(int(-1*(event.delta/120)),"units")
-                canvas.bind_all("<MouseWheel>", on_mousewhell)
+                canvas.bind_all("<MouseWheel>", on_mousewheel)
                 canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
                 canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
                 
@@ -3628,9 +3644,9 @@ class MindustryModCreator:
                 items_frame = ctk.CTkFrame(canvas, fg_color="#3a3a3a")
                 canvas.create_window((0, 0), window=items_frame, anchor="nw")
 
-                def on_mousewhell(event):
+                def on_mousewheel(event):
                     canvas.yview_scroll(int(-1*(event.delta/120)),"units")
-                canvas.bind_all("<MouseWheel>", on_mousewhell)
+                canvas.bind_all("<MouseWheel>", on_mousewheel)
                 canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
                 canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
                 
@@ -3963,9 +3979,9 @@ class MindustryModCreator:
                 items_frame = ctk.CTkFrame(canvas, fg_color="#3a3a3a")
                 canvas.create_window((0, 0), window=items_frame, anchor="nw")
 
-                def on_mousewhell(event):
+                def on_mousewheel(event):
                     canvas.yview_scroll(int(-1*(event.delta/120)),"units")
-                canvas.bind_all("<MouseWheel>", on_mousewhell)
+                canvas.bind_all("<MouseWheel>", on_mousewheel)
                 canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
                 canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
                 
@@ -4281,9 +4297,9 @@ class MindustryModCreator:
                 items_frame = ctk.CTkFrame(canvas, fg_color="#3a3a3a")
                 canvas.create_window((0, 0), window=items_frame, anchor="nw")
 
-                def on_mousewhell(event):
+                def on_mousewheel(event):
                     canvas.yview_scroll(int(-1*(event.delta/120)),"units")
-                canvas.bind_all("<MouseWheel>", on_mousewhell)
+                canvas.bind_all("<MouseWheel>", on_mousewheel)
                 canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
                 canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
                 
@@ -4657,9 +4673,9 @@ class MindustryModCreator:
                 items_frame = ctk.CTkFrame(canvas, fg_color="#3a3a3a")
                 canvas.create_window((0, 0), window=items_frame, anchor="nw")
 
-                def on_mousewhell(event):
+                def on_mousewheel(event):
                     canvas.yview_scroll(int(-1*(event.delta/120)),"units")
-                canvas.bind_all("<MouseWheel>", on_mousewhell)
+                canvas.bind_all("<MouseWheel>", on_mousewheel)
                 canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
                 canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
                 
@@ -4975,9 +4991,9 @@ class MindustryModCreator:
                 items_frame = ctk.CTkFrame(canvas, fg_color="#3a3a3a")
                 canvas.create_window((0, 0), window=items_frame, anchor="nw")
 
-                def on_mousewhell(event):
+                def on_mousewheel(event):
                     canvas.yview_scroll(int(-1*(event.delta/120)),"units")
-                canvas.bind_all("<MouseWheel>", on_mousewhell)
+                canvas.bind_all("<MouseWheel>", on_mousewheel)
                 canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
                 canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
                 
