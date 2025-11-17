@@ -64,4 +64,25 @@ echo %ESC%[96mЗапуск Mindustry Mod Creator...%ESC%[0m
 echo %ESC%[92m========================================%ESC%[0m
 echo.
 
-python ctk.py
+cd /d "%~dp0"
+
+:: Создаем необходимые папки
+if not exist "mindustry_mod_creator/Creator/core" mkdir "mindustry_mod_creator/Creator/core"
+if not exist "mindustry_mod_creator/Creator/data" mkdir "mindustry_mod_creator/Creator/data"
+if not exist "mindustry_mod_creator/Creator/ui" mkdir "mindustry_mod_creator/Creator/ui"
+if not exist "mindustry_mod_creator/Creator/utils" mkdir "mindustry_mod_creator/Creator/utils"
+
+:: Скачиваем файлы
+if not exist "mindustry_mod_creator\Creator\core\block_types.py" curl -L "https://raw.githubusercontent.com/gbvxgzbwba/mindustry_mod_creator/main/Creator/core/block_types.py" -o "mindustry_mod_creator\Creator\core\block_types.py"
+if not exist "mindustry_mod_creator\Creator\core\mod_manager.py" curl -L "https://raw.githubusercontent.com/gbvxgzbwba/mindustry_mod_creator/main/Creator/core/mod_manager.py" -o "mindustry_mod_creator\Creator\core\mod_manager.py"
+if not exist "mindustry_mod_creator\Creator\data\default_cache.json" curl -L "https://raw.githubusercontent.com/gbvxgzbwba/mindustry_mod_creator/main/Creator/data/default_cache.json" -o "mindustry_mod_creator\Creator\data\default_cache.json"
+if not exist "mindustry_mod_creator\Creator\ui\block_creator.py" curl -L "https://raw.githubusercontent.com/gbvxgzbwba/mindustry_mod_creator/main/Creator/ui/block_creator.py" -o "mindustry_mod_creator\Creator\ui\block_creator.py"
+if not exist "mindustry_mod_creator\Creator\ui\content_editor.py" curl -L "https://raw.githubusercontent.com/gbvxgzbwba/mindustry_mod_creator/main/Creator/ui/content_editor.py" -o "mindustry_mod_creator\Creator\ui\content_editor.py"
+if not exist "mindustry_mod_creator\Creator\ui\main_window.py" curl -L "https://raw.githubusercontent.com/gbvxgzbwba/mindustry_mod_creator/main/Creator/ui/main_window.py" -o "mindustry_mod_creator\Creator\ui\main_window.py"
+if not exist "mindustry_mod_creator\Creator\ui\mod_editor.py" curl -L "https://raw.githubusercontent.com/gbvxgzbwba/mindustry_mod_creator/main/Creator/ui/mod_editor.py" -o "mindustry_mod_creator\Creator\ui\mod_editor.py"
+if not exist "mindustry_mod_creator\Creator\ui\paint_editor.py" curl -L "https://raw.githubusercontent.com/gbvxgzbwba/mindustry_mod_creator/main/Creator/ui/paint_editor.py" -o "mindustry_mod_creator\Creator\ui\paint_editor.py"
+if not exist "mindustry_mod_creator\Creator\utils\cache_manager.py" curl -L "https://raw.githubusercontent.com/gbvxgzbwba/mindustry_mod_creator/main/Creator/utils/cache_manager.py" -o "mindustry_mod_creator\Creator\utils\cache_manager.py"
+if not exist "mindustry_mod_creator\Creator\utils\file_utils.py" curl -L "https://raw.githubusercontent.com/gbvxgzbwba/mindustry_mod_creator/main/Creator/utils/file_utils.py" -o "mindustry_mod_creator\Creator\utils\file_utils.py"
+if not exist "mindustry_mod_creator\Creator\utils\resource_utils.py" curl -L "https://raw.githubusercontent.com/gbvxgzbwba/mindustry_mod_creator/main/Creator/utils/resource_utils.py" -o "mindustry_mod_creator\Creator\utils\resource_utils.py"
+
+python main.py

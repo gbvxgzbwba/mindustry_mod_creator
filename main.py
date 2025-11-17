@@ -35,7 +35,7 @@ def get_github_file_version(relative_path):
         # Конвертируем путь в формат GitHub (заменяем \ на /)
         github_path = relative_path.replace('\\', '/')
         url = f"https://raw.githubusercontent.com/gbvxgzbwba/mindustry_mod_creator/main/Creator/{github_path}"
-        print(f"Проверяем GitHub: {url}")
+        #print(f"Проверяем GitHub: {url}")
         
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
@@ -44,7 +44,7 @@ def get_github_file_version(relative_path):
             
             match = re.search(r'VERSION\s*=\s*"([\d.]+)"', content)
             if match:
-                print(f"На GitHub найдена версия: {match.group(1)} для {github_path}")
+                #print(f"На GitHub найдена версия: {match.group(1)} для {github_path}")
                 return match.group(1), content
             else:
                 print(f"VERSION не найден в файле {github_path} на GitHub")
@@ -116,7 +116,7 @@ def find_py_files_with_version():
                 'relative_path': str(relative_path),
                 'local_version': version
             })
-            print(f"Найден файл с версией: {relative_path} -> {version}")
+            #print(f"Найден файл с версией: {relative_path} -> {version}")
     
     return py_files
 
@@ -151,7 +151,8 @@ def check_and_update_versions():
                 'github_content': github_content
             })
         elif comparison == 0:
-            print(f"Версия {file_info['relative_path']} актуальна: {file_info['local_version']}")
+            #print(f"Версия {file_info['relative_path']} актуальна: {file_info['local_version']}")
+            continue
         else:
             print(f"Локальная версия {file_info['relative_path']} новее GitHub: {file_info['local_version']} > {github_version}")
     
@@ -202,7 +203,7 @@ def main():
     # Сначала проверяем обновления
     print("Проверка обновлений...")
     if check_and_update_versions():
-        print("Запуск основного приложения...")
+        #print("Запуск основного приложения...")
         # Запускаем основное приложение
         app = MainWindow()
         app.run()
