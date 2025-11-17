@@ -1,5 +1,5 @@
 # Конфигурация типов блоков
-VERSION = "1.1"
+VERSION = "1.0"
 BLOCK_TYPES_CONFIG = {
     "wall": {
         "name": "Стена",
