@@ -16,7 +16,7 @@ from mindustry_mod_creator.Creator.ui.main_window import MainWindow
 from mindustry_mod_creator.Creator.utils.resource_utils import resource_path
 
 ctk.set_appearance_mode("Dark")
-
+from mindustry_mod_creator.Creator.utils.lang_system import LangT
 def get_local_version(file_path):
     """Извлекает версию из локального файла"""
     try:
@@ -26,7 +26,7 @@ def get_local_version(file_path):
             if match:
                 return match.group(1)
     except Exception as e:
-        print(f"Ошибка при чтении файла {file_path}: {e}")
+        print(f"{LangT("Ошибка при чтении файла")} {file_path}: {e}")
     return None
 
 def get_github_file_version(relative_path):
@@ -35,23 +35,19 @@ def get_github_file_version(relative_path):
         # Конвертируем путь в формат GitHub (заменяем \ на /)
         github_path = relative_path.replace('\\', '/')
         url = f"https://raw.githubusercontent.com/gbvxgzbwba/mindustry_mod_creator/main/Creator/{github_path}"
-        #print(f"Проверяем GitHub: {url}")
         
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
-            # Сохраняем оригинальный контент как есть
             content = response.text
-            
             match = re.search(r'VERSION\s*=\s*"([\d.]+)"', content)
             if match:
-                #print(f"На GitHub найдена версия: {match.group(1)} для {github_path}")
                 return match.group(1), content
             else:
-                print(f"VERSION не найден в файле {github_path} на GitHub")
+                print(f"{LangT("VERSION не найден в файле")} {github_path} {LangT("на GitHub")}")
         else:
-            print(f"Ошибка HTTP {response.status_code} для {github_path}")
+            print(f"{LangT("Ошибка HTTP")} {response.status_code} {LangT("для")} {github_path}")
     except Exception as e:
-        print(f"Ошибка при получении версии файла {relative_path} с GitHub: {e}")
+        print(f"{LangT("Ошибка при получении версии файла")} {relative_path} {LangT("с GitHub:")} {e}")
     return None, None
 
 def compare_versions(version1, version2):
@@ -80,13 +76,11 @@ def update_local_file(local_file_path, new_content):
         # Создаем директорию если не существует
         os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
         
-        # Записываем контент как есть, без изменений
         with open(local_file_path, 'w', encoding='utf-8', newline='') as f:
             f.write(new_content)
-        print(f"Файл {local_file_path} успешно обновлен")
         return True
     except Exception as e:
-        print(f"Ошибка при обновлении файла {local_file_path}: {e}")
+        print(f"{LangT("Ошибка при обновлении файла")} {local_file_path}: {e}")
     return False
 
 def find_py_files_with_version():
@@ -98,7 +92,7 @@ def find_py_files_with_version():
     creator_path = base_path / "mindustry_mod_creator" / "Creator"
     
     if not creator_path.exists():
-        print(f"Папка не найдена: {creator_path}")
+        print(f"{LangT("Папка не найдена:")} {creator_path}")
         return py_files
     
     # Ищем все .py файлы в подпапках Creator
@@ -116,7 +110,6 @@ def find_py_files_with_version():
                 'relative_path': str(relative_path),
                 'local_version': version
             })
-            #print(f"Найден файл с версией: {relative_path} -> {version}")
     
     return py_files
 
@@ -126,7 +119,7 @@ def check_and_update_versions():
     local_files = find_py_files_with_version()
     
     if not local_files:
-        print("Не найдены файлы с версиями для проверки")
+        print(LangT("Не найдены файлы с версиями для проверки"))
         return True
     
     files_to_update = []
@@ -136,13 +129,12 @@ def check_and_update_versions():
         github_version, github_content = get_github_file_version(file_info['relative_path'])
         
         if not github_version:
-            print(f"Не удалось получить версию для {file_info['relative_path']} с GitHub")
+            print(f"{LangT("Не удалось получить версию для")} {file_info['relative_path']} с GitHub")
             continue
         
         comparison = compare_versions(file_info['local_version'], github_version)
         
         if comparison < 0:
-            print(f"Найдена более новая версия для {file_info['relative_path']}: локальная {file_info['local_version']}, GitHub {github_version}")
             files_to_update.append({
                 'local_path': file_info['local_path'],
                 'relative_path': file_info['relative_path'],
@@ -150,11 +142,6 @@ def check_and_update_versions():
                 'github_version': github_version,
                 'github_content': github_content
             })
-        elif comparison == 0:
-            #print(f"Версия {file_info['relative_path']} актуальна: {file_info['local_version']}")
-            continue
-        else:
-            print(f"Локальная версия {file_info['relative_path']} новее GitHub: {file_info['local_version']} > {github_version}")
     
     # Если есть файлы для обновления, спрашиваем пользователя
     if files_to_update:
@@ -167,8 +154,8 @@ def check_and_update_versions():
         root.withdraw()  # Скрываем основное окно
         
         result = messagebox.askyesno(
-            "Обновление доступно",
-            f"Найдены обновления для следующих файлов:\n\n{update_info}\n\nОбновить файлы?",
+            LangT("Обновление доступно"),
+            f"{LangT("Найдены обновления для следующих файлов:")}\n\n{update_info}\n\n{LangT("Обновить файлы?")}",
             parent=root
         )
         root.destroy()
@@ -179,32 +166,33 @@ def check_and_update_versions():
             for file_info in files_to_update:
                 success = update_local_file(file_info['local_path'], file_info['github_content'])
                 if success:
-                    print(f"Успешно обновлен: {file_info['relative_path']}")
+                    print(f"{LangT("Успешно обновлен:")} {file_info['relative_path']}")
                     success_count += 1
                 else:
-                    print(f"Ошибка при обновлении: {file_info['relative_path']}")
+                    print(f"{LangT("Ошибка при обновлении:")} {file_info['relative_path']}")
             
             if success_count > 0:
                 root = tk.Tk()
                 root.withdraw()
-                messagebox.showinfo("Обновление завершено", f"Успешно обновлено {success_count} файлов!")
+                messagebox.showinfo(LangT("Обновление завершено"), f"{LangT("Успешно обновлено")} {success_count} {LangT("файлов!")}")
                 root.destroy()
                 
                 # Перезапускаем приложение после обновления
-                print("Перезапуск приложения...")
+                print(LangT("Перезапуск приложения..."))
                 python = sys.executable
                 os.execl(python, python, *sys.argv)
-        else:
-            print("Пользователь отказался от обновления")
+                return False  # Важно: возвращаем False чтобы предотвратить запуск основного приложения
     
     return True
 
 def main():
     # Сначала проверяем обновления
-    print("Проверка обновлений...")
-    if check_and_update_versions():
-        #print("Запуск основного приложения...")
-        # Запускаем основное приложение
+    print(LangT("Проверка обновлений..."))
+    should_continue = check_and_update_versions()
+    
+    if should_continue:
+        # Запускаем основное приложение только если не было обновления с перезапуском
+        print(LangT("Запуск основного приложения..."))
         app = MainWindow()
         app.run()
 
