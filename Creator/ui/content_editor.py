@@ -629,12 +629,7 @@ class ContentEditor:
                     command=save_content).pack(pady=20)
         ctk.CTkButton(self.root, text="Назад", font=("Arial", 12),
                     command=lambda: safe_navigation(self.show_content_buttons)).pack(pady=20)
-    
-    def clear_window(self):
-        """Очистка окна"""
-        for widget in self.root.winfo_children():
-            widget.destroy()
-    
+        
     def edit_requirements_from_context(self):
         """Редактор требований для блока, выбранного в главном меню"""
         #без изменений
@@ -1693,8 +1688,7 @@ class ContentEditor:
                     save_state()
             else:
                 save_state()
-
-    
+ 
     def open_requirements_editor(self, block_name, block_data):
                 self.clear_window()
                 
