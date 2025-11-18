@@ -12,7 +12,8 @@ import subprocess
 from tkinter import messagebox, Menu
 from PIL import Image
 from utils.resource_utils import safe_navigation
-VERSION = "1.0"
+from utils.lang_system import LangT
+VERSION = "1.1"
 class ContentEditor:
     def __init__(self, root, mod_folder, mod_name, main_app):
         self.root = root
@@ -20,11 +21,56 @@ class ContentEditor:
         self.mod_name = mod_name
         self.main_app = main_app
         self.is_pressed = False
+        self.resize_timers = {}
+        self.last_widths = {}
+        self.is_resizing = False
 
     def clear_window(self):
         """Очистка окна"""
         for widget in self.root.winfo_children():
             widget.destroy()
+    
+    def setup_resize_protection(self, widget_name, callback, delay=300):
+        """Настройка защиты от лагов для конкретного виджета"""
+        def on_configure(event):
+            if widget_name in self.resize_timers:
+                self.root.after_cancel(self.resize_timers[widget_name])
+                
+            # Отменяем предыдущий таймер для этого виджета
+            if widget_name in self.resize_timers:
+                self.root.after_cancel(self.resize_timers[widget_name])
+            
+            # Устанавливаем новый таймер
+            self.resize_timers[widget_name] = self.root.after(delay, callback)
+        
+        return on_configure
+
+    def bind_mouse_events(self):
+        """Привязка событий мыши для определения ресайза"""
+        def on_press(event):
+            self.is_resizing = True
+        
+        def on_release(event):
+            self.is_resizing = False
+            # Принудительно обновляем после отпускания мыши
+            self.force_update_all()
+        
+        self.root.bind("<ButtonPress-1>", on_press)
+        self.root.bind("<ButtonRelease-1>", on_release)
+
+    def force_update_all(self):
+        """Принудительное обновление всех отложенных обновлений"""
+        for timer_id in self.resize_timers.values():
+            try:
+                self.root.after_cancel(timer_id)
+            except:
+                pass
+        
+        # Вызываем все отложенные callback'и
+        for widget_name in list(self.resize_timers.keys()):
+            # Здесь нужно вызвать соответствующий метод обновления
+            # В зависимости от того, какой виджет активен
+            pass
 
     def show_content_buttons(self):
         """Главное меню с просмотром контента"""
@@ -43,14 +89,14 @@ class ContentEditor:
 
         # Кнопки в левой панели
         action_buttons = [
-            ("🧱 Создать блок", lambda: self.main_app.show_block_creator()),
-            ("📦 Создать предмет", lambda: self.create_content_window("item")),
-            ("💧 Создать жидкость", lambda: self.create_content_window("liquid"))
+            (LangT("🧱 Создать блок"), lambda: self.main_app.show_block_creator()),
+            (LangT("📦 Создать предмет"), lambda: self.create_content_window("item")),
+            (LangT("💧 Создать жидкость"), lambda: self.create_content_window("liquid"))
         ]
 
         action_buttons_2 = [
-            ("📁 Создать ZIP", self.create_zip),
-            ("📂 Открыть папку", self.open_mod_folder)
+            (LangT("📁 Создать ZIP"), self.create_zip),
+            (LangT("📂 Открыть папку"), self.open_mod_folder)
         ]
 
         for text, cmd in action_buttons:
@@ -88,15 +134,15 @@ class ContentEditor:
         self.tabs.pack(fill="both", expand=True)
         
         # Создаем вкладки
-        self.tabs.add("Блоки")
-        self.tabs.add("Предметы") 
-        self.tabs.add("Жидкости")
+        self.tabs.add(LangT("Блоки"))
+        self.tabs.add(LangT("Предметы")) 
+        self.tabs.add(LangT("Жидкости"))
 
         # Загружаем контент для каждой вкладки
-        self.load_content("Блоки", "blocks")
-        self.load_content("Предметы", "items") 
-        self.load_content("Жидкости", "liquids")
-    
+        self.load_content(LangT("Блоки"), "blocks")
+        self.load_content(LangT("Предметы"), "items") 
+        self.load_content(LangT("Жидкости"), "liquids")
+
     def delete_item(self, item, content_type):
         """Удаление элемента с очисткой всех связанных данных"""
         # Код без изменений
@@ -107,17 +153,17 @@ class ContentEditor:
         single_texture = os.path.join(self.mod_folder, "sprites", sprite_type, f"{item_name}.png")
         cache_path = os.path.join("mindustry_mod_creator", "cache", f"{self.mod_name}.json")
 
-        confirm_msg = f"Вы уверены, что хотите удалить {content_type[:-1]} '{item_name}'?\n\n"
-        confirm_msg += f"• Файл данных: {item['full_path']}\n"
+        confirm_msg = f"{LangT("Вы уверены, что хотите удалить")} {content_type[:-1]} '{item_name}'?\n\n"
+        confirm_msg += f"{LangT("• Файл данных:")} {item['full_path']}\n"
         
         if os.path.exists(texture_folder):
-            confirm_msg += f"• Будет удалена ВСЯ папка с текстурами: {texture_folder}\n"
+            confirm_msg += f"{LangT("• Будет удалена ВСЯ папка с текстурами:")} {texture_folder}\n"
         elif os.path.exists(single_texture):
-            confirm_msg += f"• Будет удален файл текстуры: {single_texture}\n"
+            confirm_msg += f"{LangT("• Будет удален файл текстуры:")} {single_texture}\n"
         else:
-            confirm_msg += "• Текстуры не найдены\n"
+            confirm_msg += LangT("• Текстуры не найдены")
 
-        if not messagebox.askyesno("Подтверждение удаления", confirm_msg):
+        if not messagebox.askyesno(LangT("Подтверждение удаления"), confirm_msg):
             return
 
         try:
@@ -132,7 +178,7 @@ class ContentEditor:
                 if os.path.exists(texture_folder):
                     shutil.rmtree(texture_folder)
             except Exception as e:
-                print(f"Ошибка удаления папки: {e}")
+                print(f"{LangT("Ошибка удаления папки:")} {e}")
 
             try:
                 if os.path.exists(single_texture):
@@ -140,7 +186,7 @@ class ContentEditor:
             except FileNotFoundError:
                 pass
             except Exception as e:
-                print(f"Ошибка удаления текстуры: {e}")
+                print(f"{LangT("Ошибка удаления текстуры:")} {e}")
 
             # Чистим кэш
             item_removed = False
@@ -164,31 +210,31 @@ class ContentEditor:
                     with open(cache_path, "w", encoding="utf-8") as f:
                         json.dump(cache, f, indent=4, ensure_ascii=False)
 
-            result_msg = f"{content_type[:-1]} '{item_name}' успешно удален\n"
-            result_msg += "• Все связанные текстуры удалены\n" if os.path.exists(texture_folder) or os.path.exists(single_texture) else ""
+            result_msg = f"{content_type[:-1]} '{item_name}' {LangT("успешно удален")}\n"
+            result_msg += f"{LangT("• Все связанные текстуры удалены")}\n" if os.path.exists(texture_folder) or os.path.exists(single_texture) else ""
             
-            messagebox.showinfo("Успех", result_msg)
+            messagebox.showinfo(LangT("Успех"), result_msg)
             safe_navigation(self.show_content_buttons)
             
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось удалить: {str(e)}")
-    
+            messagebox.showerror(LangT("Ошибка"), f"{LangT("Не удалось удалить:")} {str(e)}")
+
     def edit_item_json(self, json_path):
         """Редактирование JSON файла"""
         if not os.path.exists(json_path):
-            messagebox.showerror("Ошибка", f"Файл не найден: {json_path}")
+            messagebox.showerror(LangT("Ошибка"), f"{LangT("Файл не найден:")} {json_path}")
             return
         
         with open(json_path, "r", encoding="utf-8") as f:
             try:
                 data = json.load(f)
             except json.JSONDecodeError:
-                messagebox.showerror("Ошибка", "Некорректный JSON файл")
+                messagebox.showerror(LangT("Ошибка"), LangT("Некорректный JSON файл"))
                 return
         
         # Создаем окно редактора
         editor = ctk.CTkToplevel(self.root)
-        editor.title(f"Редактор {os.path.basename(json_path)}")
+        editor.title(f"{LangT("Редактор")} {os.path.basename(json_path)}")
         editor.geometry("800x600")
 
         editor.after(500, lambda: editor.focus_force())
@@ -208,19 +254,19 @@ class ContentEditor:
                 new_data = json.loads(text.get("1.0", tk.END))
                 with open(json_path, "w", encoding="utf-8") as f:
                     json.dump(new_data, f, indent=4, ensure_ascii=False)
-                messagebox.showinfo("Успех", "Изменения сохранены")
+                messagebox.showinfo(LangT("Успех"), LangT("Изменения сохранены"))
             except Exception as e:
-                messagebox.showerror("Ошибка", f"Не удалось сохранить: {str(e)}")
+                messagebox.showerror(LangT("Ошибка"), f"{LangT("Не удалось сохранить:")} {str(e)}")
         
-        ctk.CTkButton(button_frame, text="Сохранить", command=save_changes).pack(side="left", padx=5)
-        ctk.CTkButton(button_frame, text="Отмена", command=editor.destroy).pack(side="left", padx=5)
-    
+        ctk.CTkButton(button_frame, text=LangT("Сохранить"), command=save_changes).pack(side="left", padx=5)
+        ctk.CTkButton(button_frame, text=LangT("Отмена"), command=editor.destroy).pack(side="left", padx=5)
+
     def open_mod_folder(self):
         """Открытие папки мода"""
         mods_folder = os.path.join("mindustry_mod_creator", "mods", f"{self.mod_name}")
         try:
             if not os.path.exists(mods_folder):
-                messagebox.showerror("Ошибка", f"Папка с модами не существует:\n{mods_folder}")
+                messagebox.showerror(LangT("Ошибка"), f"{LangT("Папка с модами не существует:")}\n{mods_folder}")
                 return
             
             if platform.system() == "Windows":
@@ -231,8 +277,8 @@ class ContentEditor:
                 subprocess.run(["xdg-open", mods_folder])
                 
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось открыть папку:\n{str(e)}")
-    
+            messagebox.showerror(LangT("Ошибка"), f"{LangT("Не удалось открыть папку:")}\n{str(e)}")
+
     def create_zip(self):
         """Создание ZIP архива мода"""
         try:
@@ -240,18 +286,18 @@ class ContentEditor:
             zip_path = os.path.join(f"C:\\Program Files (x86)\\Steam\\steamapps\\common\\Mindustry\\saves\\mods\\{self.mod_name}.zip")
 
             if not os.path.exists(folder_path):
-                messagebox.showerror("Ошибка", f"Папка мода не существует:\n{folder_path}")
+                messagebox.showerror(LangT("Ошибка"), f"{LangT("Папка мода не существует:")}\n{folder_path}")
                 return None
             
             if not os.listdir(folder_path):
-                messagebox.showerror("Ошибка", f"Папка мода пуста:\n{folder_path}")
+                messagebox.showerror(LangT("Ошибка"), f"{LangT("Папка мода пуста:")}\n{folder_path}")
                 return None
 
             if os.path.exists(zip_path):
                 try:
                     os.remove(zip_path)
                 except Exception as e:
-                    messagebox.showerror("Ошибка", f"Не удалось удалить старый архив:\n{str(e)}")
+                    messagebox.showerror(LangT("Ошибка"), f"{LangT("Не удалось удалить старый архив:")}\n{str(e)}")
                     return None
 
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
@@ -261,13 +307,13 @@ class ContentEditor:
                         arcname = os.path.relpath(file_path, os.path.dirname(folder_path))
                         zipf.write(file_path, arcname)
             
-            messagebox.showinfo("Успех", f"ZIP-архив мода создан:\n{zip_path}")
+            messagebox.showinfo(LangT("Успех"), f"{LangT("ZIP-архив мода создан:")}\n{zip_path}")
             return zip_path
             
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось создать архив:\n{str(e)}")
+            messagebox.showerror(LangT("Ошибка"), f"{LangT("Не удалось создать архив:")}\n{str(e)}")
             return None
-    
+
     def load_content(self, tab_name, content_type):
         """Загрузка и отображение контента"""
         tab = self.tabs.tab(tab_name)
@@ -288,12 +334,14 @@ class ContentEditor:
         items = self.get_content_items(content_type)
         
         if not items:
-            ctk.CTkLabel(content_frame, text=f"Нет {content_type} в моде").pack(pady=20)
+            ctk.CTkLabel(content_frame, text=f"{LangT("Нет")} {content_type} {LangT("в моде")}").pack(pady=20)
             return
 
         CARD_WIDTH = 170
         CARD_HEIGHT = 170
         MARGIN = 15
+
+        widget_id = f"content_{content_type}"
         
         def create_card(parent, item):
             card = ctk.CTkFrame(
@@ -341,7 +389,7 @@ class ContentEditor:
                             temp_image = Image.alpha_composite(temp_image, layer_img)
                             
                         except Exception as e:
-                            print(f"Ошибка обработки слоя {layer_filename}: {e}")
+                            print(f"{LangT("Ошибка обработки слоя")} {layer_filename}: {e}")
                             continue
                     
                     if temp_image is not None:
@@ -357,7 +405,7 @@ class ContentEditor:
                         img = self.create_ctk_image(img_path)
 
             except Exception as e:
-                print(f"Критическая ошибка загрузки изображения для {item.get('name', 'unknown')}: {e}")
+                print(f"{LangT("Критическая ошибка загрузки изображения для")} {item.get('name', 'unknown')}: {e}")
                 img = None
             
             ctk.CTkLabel(card, image=img, text="X" if not img else "", 
@@ -371,13 +419,13 @@ class ContentEditor:
             
             # Контекстное меню
             menu = Menu(self.root, tearoff=0)
-            menu.add_command(label="Удалить", command=lambda: self.delete_item(item, content_type))
-            menu.add_command(label="Редактировать JSON", command=lambda: self.edit_item_json(item["full_path"]))                   
+            menu.add_command(label=LangT("Удалить"), command=lambda: self.delete_item(item, content_type))
+            menu.add_command(label=LangT("Редактировать JSON"), command=lambda: self.edit_item_json(item["full_path"]))                   
 
             if content_type in ["items", "liquids"]:
-                menu.add_command(label="Редактор фото", command=lambda item=item: self.main_app.show_paint_editor(item))
+                menu.add_command(label=LangT("Редактор фото"), command=lambda item=item: self.main_app.show_paint_editor(item))
             elif content_type == "blocks":
-                menu.add_command(label="Редактировать исследования", 
+                menu.add_command(label=LangT("Редактировать исследования"), 
                                 command=lambda: [setattr(self.root, 'current_block_item', item), self.edit_requirements_from_parent()])
             
             def show_menu(e):
@@ -390,8 +438,18 @@ class ContentEditor:
             return card
 
         def place_cards():
+            current_width = canvas.winfo_width()
+        
+            # ИЗМЕНИТЬ: Проверяем, действительно ли изменилась ширина
+            if (widget_id in self.last_widths and 
+                current_width == self.last_widths[widget_id] and 
+                current_width > 100):
+                return
+                
+            self.last_widths[widget_id] = current_width
+            
             canvas.update_idletasks()
-            width = canvas.winfo_width()
+            width = current_width
             
             cards_per_row = max(1, width // (CARD_WIDTH + MARGIN))
             remaining_space = width - (cards_per_row * (CARD_WIDTH + MARGIN))
@@ -415,9 +473,21 @@ class ContentEditor:
             content_frame.update_idletasks()
             canvas.configure(scrollregion=canvas.bbox("all"))
 
-        place_cards()
-        canvas.bind("<Configure>", lambda e: place_cards())
-    
+        def on_canvas_configure(event):
+            """Обработчик изменения размера с задержкой"""
+            # Отменяем предыдущий таймер
+            if hasattr(self, 'resize_timers') and widget_id in self.resize_timers:
+                canvas.after_cancel(self.resize_timers[widget_id])
+                
+            # Устанавливаем новый таймер с задержкой 250ms
+            self.resize_timers[widget_id] = canvas.after(250, place_cards)
+
+        # Первоначальное размещение карточек
+        canvas.after(100, place_cards)
+            
+        # Биндим событие с задержкой
+        canvas.bind("<Configure>", on_canvas_configure)
+
     def get_content_items(self, content_type):
         """Получение списка элементов контента"""
         items = []
@@ -446,7 +516,7 @@ class ContentEditor:
                     })
         
         return items
-    
+
     def generate_layer_paths(self, sprite_type, item_name, layer_filename):
         """Генерация возможных путей для слоя"""
         base_paths = []
@@ -473,14 +543,14 @@ class ContentEditor:
         
         base_paths.append(os.path.join(self.mod_folder, "sprites", layer_filename))
         return base_paths
-    
+
     def find_image_path(self, possible_paths):
         """Поиск существующего пути изображения"""
         for path in possible_paths:
             if os.path.exists(path):
                 return path
         return None
-    
+
     def create_ctk_image(self, img_path, size=(80, 80)):
         """Создание CTkImage из пути"""
         if img_path and os.path.exists(img_path):
@@ -488,9 +558,9 @@ class ContentEditor:
                 from PIL import Image
                 return ctk.CTkImage(Image.open(img_path), size=size)
             except Exception as e:
-                print(f"Ошибка загрузки изображения {img_path}: {e}")
+                print(f"{LangT("Ошибка загрузки изображения")} {img_path}: {e}")
         return None
-    
+
     def create_content_window(self, content_type="item"):
         """Универсальная форма для создания предмета или жидкости"""
         # Код без изменений
@@ -498,36 +568,36 @@ class ContentEditor:
 
         config = {
             "item": {
-                "title": "Создание нового предмета",
+                "title": LangT("Создание нового предмета"),
                 "fields": [
-                    ("Название предмета", 150),
-                    ("Описание", 150),
-                    ("Воспламеняемость (0-1)", 150),
-                    ("Взрывоопасность (0-1)", 150),
-                    ("Радиоактивность (0-1)", 150),
-                    ("Заряд (0-1)", 150),
-                    ("Цвет (#rrggbb)", 150)
+                    (LangT("Название предмета"), 150),
+                    (LangT("Описание"), 150),
+                    (LangT("Воспламеняемость (0-1)"), 150),
+                    (LangT("Взрывоопасность (0-1)"), 150),
+                    (LangT("Радиоактивность (0-1)"), 150),
+                    (LangT("Заряд (0-1)"), 150),
+                    (LangT("Цвет (#rrggbb)"), 150)
                 ],
                 "texture_url": "https://raw.githubusercontent.com/gbvxgzbwba/texture123/main/ore/ore.png",
                 "sprite_folder": "items",
                 "content_folder": "items",
-                "success_msg": "предмет"
+                "success_msg": LangT("предмет")
             },
             "liquid": {
-                "title": "Создание новой жидкости", 
+                "title": LangT("Создание новой жидкости"), 
                 "fields": [
-                    ("Название жидкости", 150),
-                    ("Описание", 150),
-                    ("Густота (0-1)", 150),
-                    ("Температура (0-1)", 150),
-                    ("Воспламеняемость (0-1)", 150),
-                    ("Взрывоопасность (0-1)", 150),
-                    ("Цвет (#rrggbb)", 150)
+                    (LangT("Название жидкости"), 150),
+                    (LangT("Описание"), 150),
+                    (LangT("Густота (0-1)"), 150),
+                    (LangT("Температура (0-1)"), 150),
+                    (LangT("Воспламеняемость (0-1)"), 150),
+                    (LangT("Взрывоопасность (0-1)"), 150),
+                    (LangT("Цвет (#rrggbb)"), 150)
                 ],
                 "texture_url": "https://raw.githubusercontent.com/Anuken/Mindustry/master/core/assets-raw/sprites/items/liquid-water.png",
                 "sprite_folder": "liquids",
                 "content_folder": "liquids", 
-                "success_msg": "жидкость"
+                "success_msg": LangT("жидкость")
             }
         }
         
@@ -558,12 +628,12 @@ class ContentEditor:
                     charge = float(entries[5].get())
                     color = entries[6].get().strip()
                     
-                    for val, field_name in [(flammability, "Воспламеняемость"), 
-                                        (explosiveness, "Взрывоопасность"), 
-                                        (radioactivity, "Радиоактивность"), 
-                                        (charge, "Заряд")]:
+                    for val, field_name in [(flammability, LangT("Воспламеняемость")), 
+                                        (explosiveness, LangT("Взрывоопасность")), 
+                                        (radioactivity, LangT("Радиоактивность")), 
+                                        (charge, LangT("Заряд"))]:
                         if not 0 <= val <= 1:
-                            raise ValueError(f"{field_name} должна быть от 0 до 1")
+                            raise ValueError(f"{field_name} {LangT("должна быть от 0 до 1")}")
                     
                     content_data = {
                         "name": name,
@@ -581,12 +651,12 @@ class ContentEditor:
                     explosiveness = float(entries[5].get())
                     color = entries[6].get().strip()
                     
-                    for val, field_name in [(viscosity, "Густота"), 
-                                        (temperature, "Температура"),
-                                        (flammability, "Воспламеняемость"), 
-                                        (explosiveness, "Взрывоопасность")]:
+                    for val, field_name in [(viscosity, LangT("Густота")), 
+                                        (temperature, LangT("Температура")),
+                                        (flammability, LangT("Воспламеняемость")), 
+                                        (explosiveness, LangT("Взрывоопасность"))]:
                         if not 0 <= val <= 1:
-                            raise ValueError(f"{field_name} должна быть от 0 до 1")
+                            raise ValueError(f"{field_name} {LangT("должна быть от 0 до 1")}")
                     
                     content_data = {
                         "name": name,
@@ -599,12 +669,12 @@ class ContentEditor:
                     }
                     
             except ValueError as e:
-                messagebox.showerror("Ошибка", str(e))
+                messagebox.showerror(LangT("Ошибка"), str(e))
                 return
 
             required_fields = [name, desc, color] if content_type == "liquid" else [name, desc]
             if not all(required_fields):
-                messagebox.showerror("Ошибка", "Все поля должны быть заполнены!")
+                messagebox.showerror(LangT("Ошибка"), LangT("Все поля должны быть заполнены!"))
                 return
 
             content_folder = os.path.join("mindustry_mod_creator", "mods", self.mod_name, "content", cfg["content_folder"])
@@ -619,22 +689,22 @@ class ContentEditor:
             
             from utils.file_utils import safe_download_texture
             if not safe_download_texture(cfg["texture_url"], texture_path):
-                messagebox.showwarning("Предупреждение", 
-                                    f"Текстура для {name} не была загружена. Вы можете добавить её позже.")
+                messagebox.showwarning(LangT("Предупреждение"), 
+                                    f"{LangT("Текстура для")} {name} {LangT("не была загружена. Вы можете добавить её позже.")}")
 
-            messagebox.showinfo("Успех", f"{cfg['success_msg'].capitalize()} '{name}' сохранён!")
+            messagebox.showinfo(LangT("Успех"), f"{cfg['success_msg'].capitalize()} '{name}' {LangT("сохранён!")}")
             safe_navigation(self.show_content_buttons)
 
-        ctk.CTkButton(self.root, text=f"💾 Сохранить {cfg['success_msg']}", font=("Arial", 12),
+        ctk.CTkButton(self.root, text=f"{LangT("💾 Сохранить")} {cfg['success_msg']}", font=("Arial", 12),
                     command=save_content).pack(pady=20)
-        ctk.CTkButton(self.root, text="Назад", font=("Arial", 12),
+        ctk.CTkButton(self.root, text=LangT("Назад"), font=("Arial", 12),
                     command=lambda: safe_navigation(self.show_content_buttons)).pack(pady=20)
-        
+
     def edit_requirements_from_context(self):
         """Редактор требований для блока, выбранного в главном меню"""
         #без изменений
         if not hasattr(self.root, 'current_block_item'):
-            messagebox.showerror("Ошибка", "Блок не выбран")
+            messagebox.showerror(LangT("Ошибка"), LangT("Блок не выбран"))
             return
         
         item = self.root.current_block_item
@@ -643,14 +713,14 @@ class ContentEditor:
         
         block_path = os.path.join(folder_path, f"{block_name}.json")
         if not os.path.exists(block_path):
-            messagebox.showerror("Ошибка", f"Файл блока не найден: {block_path}")
+            messagebox.showerror(LangT("Ошибка"), f"{LangT("Файл блока не найден:")} {block_path}")
             return
         
         with open(block_path, "r", encoding="utf-8") as f:
             try:
                 block_data = json.load(f)
             except json.JSONDecodeError:
-                messagebox.showerror("Ошибка", "Некорректный JSON файл блока.")
+                messagebox.showerror(LangT("Ошибка"), LangT("Некорректный JSON файл блока."))
                 return
         
         self.clear_window()
@@ -673,10 +743,10 @@ class ContentEditor:
                 img_label = ctk.CTkLabel(header_frame, image=ctk_img, text="")
                 img_label.pack(side="left", padx=20)
         except Exception as e:
-            print(f"Ошибка загрузки изображения: {e}")
+            print(f"{LangT("Ошибка загрузки изображения:")} {e}")
         
         ctk.CTkLabel(header_frame, 
-                    text=f"Редактор требований: {block_name}, лимит 25000",
+                    text=f"{LangT("Редактор требований:")} {block_name}, {LangT("лимит 25000")}",
                     font=("Arial", 18, "bold")).pack(side="left", padx=10)
         
         content_frame = ctk.CTkFrame(main_frame, fg_color="#3a3a3a", corner_radius=8)
@@ -941,7 +1011,7 @@ class ContentEditor:
                     requirements.append({"item": item, "amount": amount})
             
             if not requirements:
-                messagebox.showwarning("Ошибка", "Вы не добавили ни одного ресурса!")
+                messagebox.showwarning(LangT("Ошибка"), LangT("Вы не добавили ни одного ресурса!"))
                 return
             
             if "research" not in block_data:
@@ -953,21 +1023,21 @@ class ContentEditor:
                 with open(block_path, "w", encoding="utf-8") as f:
                     json.dump(block_data, f, indent=4, ensure_ascii=False)
                 
-                messagebox.showinfo("Успех", f"Требования для блока '{block_name}' успешно сохранены!")
+                messagebox.showinfo(LangT("Успех"), f"{LangT("Требования для блока")} '{block_name}' {LangT("успешно сохранены!")}")
                 safe_navigation(self.show_content_buttons)
             
             except Exception as e:
-                messagebox.showerror("Ошибка", f"Не удалось сохранить требования: {str(e)}")
+                messagebox.showerror(LangT("Ошибка"), f"{LangT("Не удалось сохранить требования:")} {str(e)}")
         
         ctk.CTkButton(btn_frame, 
-                    text="Сохранить", 
+                    text=LangT("Сохранить"), 
                     width=140, 
                     height=45,
                     font=("Arial", 14),
                     command=save_requirements).pack(side="left", padx=20)
         
         ctk.CTkButton(btn_frame, 
-                    text="Отмена", 
+                    text=LangT("Отмена"), 
                     width=140, 
                     height=45,
                     font=("Arial", 14),
@@ -980,7 +1050,7 @@ class ContentEditor:
         """Редактор требований для блока, выбранного в главном меню"""
         #без изменений
         if not hasattr(self.root, 'current_block_item'):
-            messagebox.showerror("Ошибка", "Блок не выбран")
+            messagebox.showerror(LangT("Ошибка"), LangT("Блок не выбран"))
             return
         
         item = self.root.current_block_item
@@ -989,14 +1059,14 @@ class ContentEditor:
         
         block_path = os.path.join(folder_path, f"{block_name}.json")
         if not os.path.exists(block_path):
-            messagebox.showerror("Ошибка", f"Файл блока не найден: {block_path}")
+            messagebox.showerror(LangT("Ошибка"), f"{LangT("Файл блока не найден:")} {block_path}")
             return
         
         with open(block_path, "r", encoding="utf-8") as f:
             try:
                 block_data = json.load(f)
             except json.JSONDecodeError:
-                messagebox.showerror("Ошибка", "Некорректный JSON файл блока.")
+                messagebox.showerror(LangT("Ошибка"), LangT("Некорректный JSON файл блока."))
                 return
         
         self.clear_window()
@@ -1021,10 +1091,10 @@ class ContentEditor:
                 img_label = ctk.CTkLabel(header_frame, image=ctk_img, text="")
                 img_label.pack(side="left", padx=20)
         except Exception as e:
-            print(f"Ошибка загрузки изображения: {e}")
+            print(f"{LangT("Ошибка загрузки изображения:")} {e}")
         
         ctk.CTkLabel(header_frame, 
-                    text=f"Выберите родительский блок для: {block_name}",
+                    text=f"{LangT("Выберите родительский блок для:")} {block_name}",
                     font=("Arial", 18, "bold")).pack(side="left", padx=10)
         
         content_frame = ctk.CTkFrame(main_frame, fg_color="#3a3a3a", corner_radius=8)
@@ -1049,7 +1119,7 @@ class ContentEditor:
                                         "name": block_name_in_cache
                                     })
                 except json.JSONDecodeError as e:
-                    messagebox.showerror("Ошибка", f"Некорректный JSON файл кэша: {e}")
+                    messagebox.showerror(LangT("Ошибка"), f"{LangT("Некорректный JSON файл кэша:")} {e}")
                     return
         
         blocks_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
@@ -1083,12 +1153,12 @@ class ContentEditor:
         
         def load_block_icon(block_info):
             if not isinstance(block_info, dict):
-                print("Ошибка: block_info должен быть словарем")
+                print(LangT("Ошибка: block_info должен быть словарем"))
                 return None
                 
             block_name = block_info.get("name")
             if not block_name:
-                print("Ошибка: В block_info отсутствует 'name'")
+                print(LangT("Ошибка: В block_info отсутствует 'name'"))
                 return None
             
             block_types = {
@@ -1129,15 +1199,15 @@ class ContentEditor:
                         img = img.resize((50, 50), Image.LANCZOS)
                         return ctk.CTkImage(light_image=img, size=(50, 50))
                     except Exception as e:
-                        print(f"Ошибка загрузки изображения {path}: {e}")
+                        print(f"{LangT("Ошибка загрузки изображения")} {path}: {e}")
                         continue
             try:
-                print(f"Текстура для блока {block_name} не найдена. Создана заглушка")
+                print(f"{LangT("Текстура для блока")} {block_name} {LangT("не найдена. Создана заглушка")}")
                 from PIL import Image
                 empty_img = Image.new('RGBA', (50, 50), (100, 100, 100, 255))
                 return ctk.CTkImage(light_image=empty_img, size=(50, 50))
             except Exception as e:
-                print(f"Ошибка создания заглушки: {e}")
+                print(f"{LangT("Ошибка создания заглушки:")} {e}")
                 return None
         
         def create_block_card(parent, block_info):
@@ -1180,13 +1250,13 @@ class ContentEditor:
                 try:
                     with open(block_path, "w", encoding="utf-8") as f:
                         json.dump(block_data, f, indent=4, ensure_ascii=False)
-                    messagebox.showinfo("Успех", f"Родительский блок '{block_name_in_cache}' установлен")
+                    messagebox.showinfo(LangT("Успех"), f"{LangT("Родительский блок")} '{block_name_in_cache}' {LangT("установлен")}")
                     self.edit_requirements_from_context()
                 except Exception as e:
-                    messagebox.showerror("Ошибка", f"Не удалось сохранить: {e}")
+                    messagebox.showerror(LangT("Ошибка"), f"{LangT("Не удалось сохранить:")} {e}")
             
             ctk.CTkButton(content_frame, 
-                        text="Выбрать", 
+                        text=LangT("Выбрать"), 
                         command=on_select).pack(pady=5)
             
             return card_frame
@@ -1209,7 +1279,7 @@ class ContentEditor:
         buttons_frame.pack(fill="x", pady=(10, 0))
         
         ctk.CTkButton(buttons_frame, 
-                    text="Отмена", 
+                    text=LangT("Отмена"), 
                     command=lambda: safe_navigation(self.show_content_buttons),
                     fg_color="#e62525",
                     hover_color="#701c1c").pack(side="right", padx=10)
@@ -1432,7 +1502,7 @@ class ContentEditor:
 
             def change_color():
                 global current_color
-                color = colorchooser.askcolor(title="Выберите цвет", initialcolor=current_color)
+                color = colorchooser.askcolor(title=LangT("Выберите цвет"), initialcolor=current_color)
                 if color[1]:
                     current_color = color[1]
                     color_button.configure(fg_color=current_color)
@@ -1477,7 +1547,7 @@ class ContentEditor:
                                         pixels[x, y] = (0, 0, 0, 255)
                     
                     img.save(save_path)
-                    messagebox.showinfo("Сохранено", f"Изображение сохранено в:\n{save_path}")
+                    messagebox.showinfo(LangT("Сохранено"), f"{LangT("Изображение сохранено в:")}\n{save_path}")
                 finally:
                     if 'img' in locals():
                         img.close()
@@ -1526,7 +1596,7 @@ class ContentEditor:
                     img.close()
                     save_state()
                 except Exception as e:
-                    messagebox.showerror("Ошибка", f"Не удалось загрузить шаблон: {e}")
+                    messagebox.showerror(LangT("Ошибка"), f"{LangT("Не удалось загрузить шаблон:")} {e}")
 
             def show_templates():
                 templates = []
@@ -1539,11 +1609,11 @@ class ContentEditor:
                             })
                 
                 if not templates:
-                    messagebox.showinfo("Шаблоны", f"В папке шаблонов ({content_type}) нет изображений")
+                    messagebox.showinfo(LangT("Шаблоны"), f"{LangT("В папке шаблонов")} ({content_type}) {LangT("нет изображений")}")
                     return
                 
                 template_window = ctk.CTkToplevel(paint_window)
-                template_window.title("Выберите шаблон")
+                template_window.title(LangT("Выберите шаблон"))
                 template_window.geometry("600x400")
                 
                 scroll_frame = ctk.CTkScrollableFrame(template_window)
@@ -1565,9 +1635,9 @@ class ContentEditor:
                             load_template_image(path)
                             template_window.destroy()
                         
-                        ctk.CTkButton(frame, text="Загрузить", command=load_template).pack(side="right", padx=10)
+                        ctk.CTkButton(frame, text=LangT("Загрузить"), command=load_template).pack(side="right", padx=10)
                     except Exception as e:
-                        print(f"Ошибка загрузки шаблона {template['name']}: {e}")
+                        print(f"{LangT("Ошибка загрузки шаблона")} {template['name']}: {e}")
 
             paint_window = ctk.CTkToplevel(self.root)
             paint_window.title(f"32x32 Pixel Editor - {item_name}")
@@ -1582,7 +1652,7 @@ class ContentEditor:
 
             ctk.CTkButton(
                 tool_frame,
-                text="< Отмена",
+                text=LangT("< Отмена"),
                 command=undo,
                 width=80,
                 fg_color="#555555",
@@ -1591,7 +1661,7 @@ class ContentEditor:
 
             ctk.CTkButton(
                 tool_frame,
-                text="Повтор >",
+                text=LangT("Повтор >"),
                 command=redo,
                 width=80,
                 fg_color="#555555",
@@ -1600,7 +1670,7 @@ class ContentEditor:
 
             pencil_button = ctk.CTkButton(
                 tool_frame, 
-                text="Карандаш",
+                text=LangT("Карандаш"),
                 command=lambda: set_tool("pencil"),
                 width=80,
                 fg_color="#1f6aa5"
@@ -1609,7 +1679,7 @@ class ContentEditor:
 
             eraser_button = ctk.CTkButton(
                 tool_frame,
-                text="Ластик",
+                text=LangT("Ластик"),
                 command=lambda: set_tool("eraser"),
                 width=80
             )
@@ -1617,7 +1687,7 @@ class ContentEditor:
 
             fill_button = ctk.CTkButton(
                 tool_frame,
-                text="Заливка",
+                text=LangT("Заливка"),
                 command=lambda: set_tool("fill"),
                 width=80
             )
@@ -1625,7 +1695,7 @@ class ContentEditor:
 
             color_button = ctk.CTkButton(
                 tool_frame, 
-                text="Цвет", 
+                text=LangT("Цвет"), 
                 command=change_color,
                 fg_color=current_color,
                 hover_color=current_color,
@@ -1635,14 +1705,14 @@ class ContentEditor:
 
             ctk.CTkButton(
                 tool_frame,
-                text="Очистить",
+                text=LangT("Очистить"),
                 command=clear_canvas,
                 width=80
             ).pack(side="left", padx=5)
 
             ctk.CTkButton(
                 tool_frame,
-                text="Шаблоны",
+                text=LangT("Шаблоны"),
                 command=show_templates,
                 width=80,
                 fg_color="#4CAF50",
@@ -1651,7 +1721,7 @@ class ContentEditor:
 
             ctk.CTkButton(
                 tool_frame,
-                text="Сохранить",
+                text=LangT("Сохранить"),
                 command=save_image,
                 width=80
             ).pack(side="left", padx=5)
@@ -1684,11 +1754,11 @@ class ContentEditor:
                                 )
                     save_state()
                 except Exception as e:
-                    print(f"Ошибка загрузки изображения: {e}")
+                    print(f"{LangT("Ошибка загрузки изображения:")} {e}")
                     save_state()
             else:
                 save_state()
- 
+
     def open_requirements_editor(self, block_name, block_data):
                 self.clear_window()
                 
@@ -1710,10 +1780,10 @@ class ContentEditor:
                         img_label = ctk.CTkLabel(header_frame, image=ctk_img, text="")
                         img_label.pack(side="left", padx=20)
                 except Exception as e:
-                    print(f"Ошибка загрузки изображения: {e}")
+                    print(f"{LangT("Ошибка загрузки изображения:")} {e}")
                 
                 ctk.CTkLabel(header_frame, 
-                            text=f"Редактор ресурсов: {block_name}, {block_type}, максимум 70.000",
+                            text=f"{LangT("Редактор ресурсов:")} {block_name}, {block_type}, {LangT("максимум 70.000")}",
                             font=("Arial", 18, "bold")).pack(side="left", padx=10)
                 
                 content_frame = ctk.CTkFrame(main_frame, fg_color="#3a3a3a", corner_radius=8)
@@ -1902,7 +1972,18 @@ class ContentEditor:
                     return 1, -1
                 
                 def update_grid(canvas, items_frame, items):
+                    """Обновление сетки карточек"""
                     container_width = canvas.winfo_width()
+                    
+                    # Проверяем, действительно ли изменился размер
+                    widget_id = f"requirements_{block_name}"
+                    if (widget_id in self.last_widths and 
+                        container_width == self.last_widths[widget_id] and 
+                        container_width > 100):
+                        return
+                        
+                    self.last_widths[widget_id] = container_width
+
                     if container_width < 1:
                         return
                     
@@ -1952,7 +2033,11 @@ class ContentEditor:
                 all_items = default_items + mod_items
                 update_grid(canvas, items_frame, all_items)
                 
-                canvas.bind("<Configure>", lambda e: update_grid(canvas, items_frame, all_items))
+                widget_id = f"requirements_{block_name}"
+                resize_handler = self.setup_resize_protection(widget_id, 
+                    lambda: update_grid(canvas, items_frame, all_items), 
+                    delay=300)
+                canvas.bind("<Configure>", resize_handler)
                 items_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
                 
                 footer_frame = ctk.CTkFrame(main_frame, height=70, fg_color="#3a3a3a", corner_radius=8)
@@ -1975,7 +2060,7 @@ class ContentEditor:
                             requirements.append({"item": item, "amount": amount})
                     
                     if not requirements:
-                        messagebox.showwarning("Ошибка", "Вы не добавили ни одного ресурса!")
+                        messagebox.showwarning(LangT("Ошибка"), LangT("Вы не добавили ни одного ресурса!"))
                         return
                     
                     block_data["requirements"] = requirements
@@ -1987,13 +2072,13 @@ class ContentEditor:
                         
                         # Создаем окно прогресса и блокируем кнопки
                         progress_window = ctk.CTkToplevel(self.root)
-                        progress_window.title("Загрузка текстур")
+                        progress_window.title(LangT("Загрузка текстур"))
                         progress_window.geometry("400x150")
                         progress_window.transient(self.root)
                         progress_window.grab_set()
                         progress_window.protocol("WM_DELETE_WINDOW", lambda: None)  # Блокируем закрытие
                         
-                        progress_label = ctk.CTkLabel(progress_window, text="Подготовка к загрузке...")
+                        progress_label = ctk.CTkLabel(progress_window, text=LangT("Подготовка к загрузке..."))
                         progress_label.pack(pady=10)
                         
                         progress_bar = ctk.CTkProgressBar(progress_window, width=300)
@@ -2077,8 +2162,11 @@ class ContentEditor:
                         elif block_type == "SolidPump":
                             texture_names = ["water-extractor.png","water-extractor-rotator.png","water-extractor-top.png"]
                             base_url = "https://raw.githubusercontent.com/Anuken/Mindustry/master/core/assets-raw/sprites/blocks/drills/"
+                        elif block_type == "MendProjector":
+                            texture_names = ["mend-projector.png", "mend-projector-top.png"]
+                            base_url = "https://raw.githubusercontent.com/Anuken/Mindustry/master/core/assets-raw/sprites/blocks/defense/"
                         else:
-                            raise ValueError(f"Неизвестный тип блока: {block_type}")
+                            raise ValueError(f"{LangT("Неизвестный тип блока:")} {block_type}")
 
                         if len(texture_names) == 1:
                             sprite_folder = os.path.join("mindustry_mod_creator", "mods", self.mod_name, "sprites", block_type)
@@ -2108,7 +2196,7 @@ class ContentEditor:
                                     img = img.resize((new_size, new_size), Image.Resampling.LANCZOS)
                                     img.save(image_path)
                             except Exception as e:
-                                print(f"Ошибка при изменении размера {image_path}: {e}")
+                                print(f"{LangT("Ошибка при изменении размера")} {image_path}: {e}")
                         
                         def download_textures():
                             nonlocal downloaded
@@ -2155,6 +2243,8 @@ class ContentEditor:
                                             new_name = texture.replace("rotary-pump", block_name)
                                         elif block_type == "SolidPump":
                                             new_name = texture.replace("water-extractor", block_name)
+                                        elif block_type == "MendProjector":
+                                            new_name = texture.replace("mend-projector", block_name)
                                         else:
                                             new_name = f"{block_name}{texture[texture.find('-'):]}" if '-' in texture else f"{block_name}.png"
                                         
@@ -2164,14 +2254,14 @@ class ContentEditor:
                                             texture_url = f"{base_url}{texture}"
                                             urllib.request.urlretrieve(texture_url, texture_path)
                                             resize_image(texture_path, size_multiplier)
-                                            progress_label.configure(text=f"Загружено: {new_name}")
+                                            progress_label.configure(text=f"{LangT("Загружено:")} {new_name}")
                                         
                                         downloaded += 1
                                         progress_window.after(100, update_progress)
                                     
                                     except Exception as e:
-                                        progress_label.configure(text=f"Ошибка загрузки: {texture}")
-                                        print(f"Ошибка при загрузке {texture}: {str(e)}")
+                                        progress_label.configure(text=f"{LangT("Ошибка загрузки:")} {texture}")
+                                        print(f"{LangT("Ошибка при загрузке")} {texture}: {str(e)}")
                                         downloaded += 1  # Все равно увеличиваем счетчик
                                 
                                 progress_window.after(100, finish_saving)
@@ -2189,7 +2279,7 @@ class ContentEditor:
                                 for child in btn_frame.winfo_children():
                                     child.configure(state="normal")
                                 
-                                messagebox.showinfo("Успех", f"Блок '{block_name}' успешно сохранён!")
+                                messagebox.showinfo(LangT("Успех"), f"{LangT("Блок")} '{block_name}' {LangT("успешно сохранён!")}")
                                 safe_navigation(self.main_app.show_content_buttons())
                             
                             except Exception as e:
@@ -2199,26 +2289,26 @@ class ContentEditor:
                             progress_window.destroy()
                             for child in btn_frame.winfo_children():
                                 child.configure(state="normal")
-                            messagebox.showerror("Ошибка", f"Не удалось сохранить блок: {error_msg}")
+                            messagebox.showerror(LangT("Ошибка"), f"{LangT("Не удалось сохранить блок:")} {error_msg}")
                         
                         # Запускаем загрузку в отдельном потоке
                         threading.Thread(target=download_textures, daemon=True).start()
 
                     except Exception as e:
-                        messagebox.showerror("Ошибка", f"Не удалось начать сохранение: {str(e)}")
+                        messagebox.showerror(LangT("Ошибка"), f"{LangT("Не удалось начать сохранение:")} {str(e)}")
                         # Восстанавливаем состояние кнопок на случай ошибки
                         for child in btn_frame.winfo_children():
                             child.configure(state="normal")
                 
                 ctk.CTkButton(btn_frame, 
-                            text="Сохранить", 
+                            text=LangT("Сохранить"), 
                             width=140, 
                             height=45,
                             font=("Arial", 14),
                             command=save_requirements).pack(side="left", padx=20)
                 
                 ctk.CTkButton(btn_frame, 
-                            text="Отмена", 
+                            text=LangT("Отмена"), 
                             width=140, 
                             height=45,
                             font=("Arial", 14),
@@ -2237,7 +2327,7 @@ class ContentEditor:
                 # Определяем параметры в зависимости от типа редактора
                 config = {
                     "items_input": {
-                        "title": "потребляемых предметов",
+                        "title": LangT("потребляемых предметов"),
                         "resource_type": "items",
                         "default_resources": [
                             "copper", "lead", "metaglass", "graphite", "sand", 
@@ -2254,7 +2344,7 @@ class ContentEditor:
                         "border_color": "#613e11"
                     },
                     "liquids_input": {
-                        "title": "потребляемых жидкостей", 
+                        "title": LangT("потребляемых жидкостей"), 
                         "resource_type": "liquids",
                         "default_resources": ["water", "slag", "oil", "cryofluid"],
                         "resource_folder": "liquids",
@@ -2266,7 +2356,7 @@ class ContentEditor:
                         "border_color": "#1f4b7a"
                     },
                     "items_output": {
-                        "title": "выходных предметов",
+                        "title": LangT("выходных предметов"),
                         "resource_type": "items",
                         "default_resources": [
                             "copper", "lead", "metaglass", "graphite", "sand", 
@@ -2283,7 +2373,7 @@ class ContentEditor:
                         "border_color": "#1a5232"
                     },
                     "liquids_output": {
-                        "title": "выходных жидкостей",
+                        "title": LangT("выходных жидкостей"),
                         "resource_type": "liquids", 
                         "default_resources": ["water", "slag", "oil", "cryofluid"],
                         "resource_folder": "liquids",
@@ -2315,10 +2405,10 @@ class ContentEditor:
                         img_label = ctk.CTkLabel(header_frame, image=ctk_img, text="")
                         img_label.pack(side="left", padx=20)
                 except Exception as e:
-                    print(f"Ошибка загрузки изображения: {e}")
+                    print(f"{LangT("Ошибка загрузки изображения:")} {e}")
                 
                 ctk.CTkLabel(header_frame, 
-                            text=f"Редактор {cfg['title']}: {block_name}",
+                            text=f"{LangT("Редактор")} {cfg['title']}: {block_name}",
                             font=("Arial", 18, "bold")).pack(side="left", padx=10)
                 
                 content_frame = ctk.CTkFrame(main_frame, fg_color="#3a3a3a", corner_radius=8)
@@ -2531,6 +2621,15 @@ class ContentEditor:
                 
                 def update_grid(canvas, items_frame, items):
                     container_width = canvas.winfo_width()
+    
+                    # Проверяем, действительно ли изменился размер
+                    if (widget_id in self.last_widths and 
+                        container_width == self.last_widths[widget_id] and 
+                        container_width > 100):
+                        return
+                        
+                    self.last_widths[widget_id] = container_width
+
                     if container_width < 1:
                         return
                     
@@ -2580,7 +2679,11 @@ class ContentEditor:
                 all_resources = default_resources + mod_resources
                 update_grid(canvas, items_frame, all_resources)
                 
-                canvas.bind("<Configure>", lambda e: update_grid(canvas, items_frame, all_resources))
+                widget_id = f"requirements_{block_name}"
+                resize_handler = self.setup_resize_protection(widget_id, 
+                    lambda: update_grid(canvas, items_frame, all_resources), 
+                    delay=300)
+                canvas.bind("<Configure>", resize_handler)
                 items_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
                 
                 footer_frame = ctk.CTkFrame(main_frame, height=70, fg_color="#3a3a3a", corner_radius=8)
@@ -2615,16 +2718,16 @@ class ContentEditor:
                     # Проверки в зависимости от типа редактора
                     if not resources_list:
                         if editor_type == "items_input" and not block_data["consumes"].get("liquids"):
-                            messagebox.showwarning("Ошибка", "Вы не добавили ни одного предмета!")
+                            messagebox.showwarning(LangT("Ошибка"), LangT("Вы не добавили ни одного предмета!"))
                             return
                         elif editor_type == "liquids_input" and not block_data["consumes"].get("items"):
-                            messagebox.showwarning("Ошибка", "Вы не добавили ни жидкостей, ни предметов!")
+                            messagebox.showwarning(LangT("Ошибка"), LangT("Вы не добавили ни жидкостей, ни предметов!"))
                             return
                         elif editor_type == "items_output" and not block_data.get("outputLiquids"):
-                            messagebox.showwarning("Ошибка", "Вы не добавили ни предметов, ни жидкостей!")
+                            messagebox.showwarning(LangT("Ошибка"), LangT("Вы не добавили ни предметов!"))
                             return
                         elif editor_type == "liquids_output" and not block_data.get("outputItems"):
-                            messagebox.showwarning("Ошибка", "Вы не добавили ни жидкостей, ни предметов!")
+                            messagebox.showwarning(LangT("Ошибка"), LangT("Вы не добавили ни жидкостей, ни предметов!"))
                             return
                     
                     # Сохраняем данные в соответствующую структуру
@@ -2651,7 +2754,7 @@ class ContentEditor:
                         with open(block_path, "w", encoding="utf-8") as f:
                             json.dump(block_data, f, indent=4, ensure_ascii=False)
                         
-                        messagebox.showinfo("Успех", f"{cfg['title'].capitalize()} для блока '{block_name}' успешно сохранены!")
+                        messagebox.showinfo(LangT("Успех"), f"{cfg['title'].capitalize()} {LangT("для блока")} '{block_name}' {LangT("успешно сохранены!")}")
                         
                         # Переход к следующему редактору
                         if cfg["next_editor"] == "liquids_input":
@@ -2664,18 +2767,18 @@ class ContentEditor:
                             self.open_requirements_editor(block_name, block_data)
                     
                     except Exception as e:
-                        messagebox.showerror("Ошибка", f"Не удалось сохранить {cfg['resource_type']}: {str(e)}")
+                        messagebox.showerror(LangT("Ошибка"), f"{LangT("Не удалось сохранить")} {cfg['resource_type']}: {str(e)}")
                 
                 def skip_resources():
                     # Проверки для пропуска в зависимости от типа редактора
                     if editor_type == "liquids_input" and not block_data["consumes"].get("items"):
-                        messagebox.showerror("Ошибка", "Вы не добавили предмет, нельзя пропустить жидкость")
+                        messagebox.showerror(LangT("Ошибка"), LangT("Вы не добавили предмет, нельзя пропустить жидкость"))
                         return
                     elif editor_type == "items_output" and not block_data.get("outputLiquids"):
                         # Для items_output проверяем, есть ли выходные жидкости
                         pass
                     elif editor_type == "liquids_output" and not block_data.get("outputItems"):
-                        messagebox.showerror("Ошибка", "Вы не добавили предмет, нельзя пропустить жидкость")
+                        messagebox.showerror(LangT("Ошибка"), LangT("Вы не добавили предмет, нельзя пропустить жидкость"))
                         return
                     
                     # Переход к следующему редактору
@@ -2722,14 +2825,14 @@ class ContentEditor:
                     return block_data
                 
                 ctk.CTkButton(btn_frame, 
-                            text="Сохранить", 
+                            text=LangT("Сохранить"), 
                             width=140, 
                             height=45,
                             font=("Arial", 14),
                             command=save_requirements).pack(side="left", padx=20)
                 
                 ctk.CTkButton(btn_frame, 
-                            text="Пропустить", 
+                            text=LangT("Пропустить"), 
                             width=140, 
                             height=45,
                             font=("Arial", 14),
@@ -2748,7 +2851,7 @@ class ContentEditor:
                 # Определяем параметры в зависимости от типа редактора
                 config = {
                     "items": {
-                        "title": "потребляемых предметов",
+                        "title": LangT("потребляемых предметов"),
                         "resource_type": "items",
                         "default_resources": [
                             "copper", "lead", "metaglass", "graphite", "sand", 
@@ -2765,7 +2868,7 @@ class ContentEditor:
                         "increment": 1
                     },
                     "liquids": {
-                        "title": "потребляемых жидкостей", 
+                        "title": LangT("потребляемых жидкостей"), 
                         "resource_type": "liquids",
                         "default_resources": ["water", "slag", "oil", "cryofluid"],
                         "resource_folder": "liquids",
@@ -2796,10 +2899,10 @@ class ContentEditor:
                         img_label = ctk.CTkLabel(header_frame, image=ctk_img, text="")
                         img_label.pack(side="left", padx=20)
                 except Exception as e:
-                    print(f"Ошибка загрузки изображения: {e}")
+                    print(f"{LangT("Ошибка загрузки изображения:")} {e}")
                 
                 ctk.CTkLabel(header_frame, 
-                            text=f"Редактор {cfg['title']}: {block_name}",
+                            text=f"{LangT("Редактор")} {cfg['title']}: {block_name}",
                             font=("Arial", 18, "bold")).pack(side="left", padx=10)
                 
                 content_frame = ctk.CTkFrame(main_frame, fg_color="#3a3a3a", corner_radius=8)
@@ -3012,6 +3115,15 @@ class ContentEditor:
                 
                 def update_grid(canvas, items_frame, items):
                     container_width = canvas.winfo_width()
+    
+                    # Проверяем, действительно ли изменился размер
+                    if (widget_id in self.last_widths and 
+                        container_width == self.last_widths[widget_id] and 
+                        container_width > 100):
+                        return
+                        
+                    self.last_widths[widget_id] = container_width
+
                     if container_width < 1:
                         return
                     
@@ -3061,7 +3173,11 @@ class ContentEditor:
                 all_resources = default_resources + mod_resources
                 update_grid(canvas, items_frame, all_resources)
                 
-                canvas.bind("<Configure>", lambda e: update_grid(canvas, items_frame, all_resources))
+                widget_id = f"requirements_{block_name}"
+                resize_handler = self.setup_resize_protection(widget_id, 
+                    lambda: update_grid(canvas, items_frame, all_resources), 
+                    delay=300)
+                canvas.bind("<Configure>", resize_handler)
                 items_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
                 
                 footer_frame = ctk.CTkFrame(main_frame, height=70, fg_color="#3a3a3a", corner_radius=8)
@@ -3109,10 +3225,10 @@ class ContentEditor:
                     # Проверки в зависимости от типа редактора
                     if not resources_list:
                         if editor_type == "items" and not block_data["consumes"].get("liquids"):
-                            messagebox.showerror("Ошибка", "Должно быть хотя бы что-то одно: предметы ИЛИ жидкости!")
+                            messagebox.showerror(LangT("Ошибка"), LangT("Должно быть хотя бы что-то одно: предметы ИЛИ жидкости!"))
                             return
                         elif editor_type == "liquids" and not block_data["consumes"].get("items"):
-                            messagebox.showerror("Ошибка", "Должно быть хотя бы что-то одно: предметы ИЛИ жидкости!")
+                            messagebox.showerror(LangT("Ошибка"), LangT("Должно быть хотя бы что-то одно: предметы ИЛИ жидкости!"))
                             return
                     
                     # Сохраняем данные в соответствующую структуру
@@ -3130,7 +3246,7 @@ class ContentEditor:
                         with open(block_path, "w", encoding="utf-8") as f:
                             json.dump(block_data, f, indent=4, ensure_ascii=False)
                         
-                        messagebox.showinfo("Успех", f"{cfg['title'].capitalize()} для блока '{block_name}' успешно сохранены!")
+                        messagebox.showinfo(LangT("Успех"), f"{cfg['title'].capitalize()} {LangT("для блока")} '{block_name}' {LangT("успешно сохранены!")}")
                         
                         # Переход к следующему редактору
                         if editor_type == "items":
@@ -3139,12 +3255,12 @@ class ContentEditor:
                             self.open_requirements_editor(block_name, block_data)
                     
                     except Exception as e:
-                        messagebox.showerror("Ошибка", f"Не удалось сохранить {cfg['resource_type']}: {str(e)}")
+                        messagebox.showerror(LangT("Ошибка"), f"{LangT("Не удалось сохранить")} {cfg['resource_type']}: {str(e)}")
                 
                 def skip_resources():
                     # Проверки для пропуска в зависимости от типа редактора
                     if editor_type == "liquids" and not block_data["consumes"].get("items"):
-                        messagebox.showerror("Ошибка", "Если пропустили предмет добавте жидкость")
+                        messagebox.showerror(LangT("Ошибка"), LangT("Если пропустили предмет добавте жидкость"))
                         return
                     
                     # Переход к следующему редактору
@@ -3181,14 +3297,14 @@ class ContentEditor:
                     return block_data
                 
                 ctk.CTkButton(btn_frame, 
-                            text="Сохранить", 
+                            text=LangT("Сохранить"), 
                             width=140, 
                             height=45,
                             font=("Arial", 14),
                             command=save_requirements).pack(side="left", padx=20)
                 
                 ctk.CTkButton(btn_frame, 
-                            text="Пропустить", 
+                            text=LangT("Пропустить"), 
                             width=140, 
                             height=45,
                             font=("Arial", 14),
@@ -3216,10 +3332,10 @@ class ContentEditor:
                         img_label = ctk.CTkLabel(header_frame, image=ctk_img, text="")
                         img_label.pack(side="left", padx=20)
                 except Exception as e:
-                    print(f"Ошибка загрузки изображения: {e}")
+                    print(f"{LangT("Ошибка загрузки изображения:")} {e}")
                 
                 ctk.CTkLabel(header_frame, 
-                            text=f"Выбор жидкости для насоса: {block_name}",
+                            text=f"{LangT("Выбор жидкости для насоса:")} {block_name}",
                             font=("Arial", 18, "bold")).pack(side="left", padx=10)
                 
                 content_frame = ctk.CTkFrame(main_frame, fg_color="#3a3a3a", corner_radius=8)
@@ -3276,7 +3392,7 @@ class ContentEditor:
 
                     select_btn = ctk.CTkButton(
                         bottom_frame,
-                        text="Выбрать",
+                        text=LangT("Выбрать"),
                         width=120,
                         height=35,
                         font=("Arial", 14),
@@ -3299,12 +3415,12 @@ class ContentEditor:
                         with open(block_path, "w", encoding="utf-8") as f:
                             json.dump(block_data, f, indent=4, ensure_ascii=False)
                         
-                        messagebox.showinfo("Успех", f"Жидкость '{liquid}' добавлена в блок '{block_name}'!")
+                        messagebox.showinfo(LangT("Успех"), f"{LangT("Жидкость")} '{liquid}' {LangT("добавлена в блок")} '{block_name}'!")
                         # Сразу открываем редактор требований после выбора
                         self.open_requirements_editor(block_name, block_data)
                     
                     except Exception as e:
-                        messagebox.showerror("Ошибка", f"Не удалось сохранить жидкость: {str(e)}")
+                        messagebox.showerror(LangT("Ошибка"), f"{LangT("Не удалось сохранить жидкость:")} {str(e)}")
                 
                 def calculate_columns(container_width):
                     min_card_width = 180
@@ -3378,3 +3494,313 @@ class ContentEditor:
                 
                 canvas.bind("<Configure>", lambda e: update_grid(canvas, items_frame, all_liquids))
                 items_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+    def open_mender_resource_editor(self, block_name, block_data):
+        """
+        Редактор для выбора предметов для блока
+        """
+        self.clear_window()
+        self.root.configure(fg_color="#2b2b2b")
+        
+        main_frame = ctk.CTkFrame(self.root, fg_color="transparent")
+        main_frame.pack(padx=10, pady=10, fill="both", expand=True)
+        
+        header_frame = ctk.CTkFrame(main_frame, height=90, fg_color="#3a3a3a", corner_radius=8)
+        header_frame.pack(fill="x", pady=(0, 15))
+        
+        try:
+            block_type = block_data.get("type")
+            texture_path = os.path.join("mindustry_mod_creator", "mods", self.mod_name, "sprites", block_type, block_name, f"{block_name}.png")
+            if os.path.exists(texture_path):
+                img = Image.open(texture_path)
+                img = img.resize((70, 70), Image.LANCZOS)
+                ctk_img = ctk.CTkImage(light_image=img, size=(70, 70))
+                img_label = ctk.CTkLabel(header_frame, image=ctk_img, text="")
+                img_label.pack(side="left", padx=20)
+        except Exception as e:
+            print(f"Ошибка загрузки изображения: {e}")
+        
+        ctk.CTkLabel(header_frame, 
+                    text=f"Выбор предметов для блока: {block_name}",
+                    font=("Arial", 18, "bold")).pack(side="left", padx=10)
+        
+        content_frame = ctk.CTkFrame(main_frame, fg_color="#3a3a3a", corner_radius=8)
+        content_frame.pack(fill="both", expand=True)
+        
+        def load_resource_icon(resource_name):
+            icon_paths = [
+                os.path.join(self.mod_folder, "sprites", "items", f"{resource_name}.png"),
+                os.path.join("mindustry_mod_creator", "sprites", "items", f"{resource_name}.png"),
+                os.path.join("mindustry_mod_creator", "icons", f"{resource_name}.png")
+            ]
+            for path in icon_paths:
+                if os.path.exists(path):
+                    try:
+                        img = Image.open(path)
+                        img = img.resize((50, 50), Image.LANCZOS)
+                        return ctk.CTkImage(light_image=img, size=(50, 50))
+                    except:
+                        continue
+            return None
+        
+        # Получаем списки ресурсов
+        default_resources = [
+            "copper", "lead", "metaglass", "graphite", "sand", 
+            "coal", "titanium", "thorium", "scrap", "silicon",
+            "plastanium", "phase-fabric", "surge-alloy", "spore-pod", 
+            "blast-compound", "pyratite"
+        ]
+        
+        mod_resources = []
+        mod_resources_path = os.path.join(self.mod_folder, "content", "items")
+        if os.path.exists(mod_resources_path):
+            mod_resources = [f.replace(".json", "") for f in os.listdir(mod_resources_path) if f.endswith(".json")]
+
+        # Переменные для выбора
+        selected_resources = []  # Список для хранения выбранных ресурсов
+        selected_count = tk.StringVar(value="0/5")  # Счетчик выбранных ресурсов
+        resource_amount_vars = {}  # Словарь для хранения количества каждого ресурса
+        checkbox_vars = {}  # Словарь для хранения переменных чекбоксов
+
+        def create_resource_card(parent, resource, is_mod_resource=False):
+            card_frame = ctk.CTkFrame(parent, 
+                                    fg_color="#4a4a4a", 
+                                    corner_radius=8,
+                                    height=200)
+            card_frame.pack_propagate(False)
+            
+            content_frame = ctk.CTkFrame(card_frame, fg_color="transparent")
+            content_frame.pack(fill="both", expand=True, padx=10, pady=10)
+            
+            top_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+            top_frame.pack(fill="x", pady=(0, 10))
+            
+            icon = load_resource_icon(resource)
+            if icon:
+                ctk.CTkLabel(top_frame, image=icon, text="").pack()
+            
+            ctk.CTkLabel(top_frame, 
+                        text=resource.capitalize(), 
+                        font=("Arial", 14),
+                        anchor="center").pack()
+            
+            bottom_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+            bottom_frame.pack(fill="x", pady=(10, 0))
+
+            # Поле для ввода количества для предмета
+            amount_frame = ctk.CTkFrame(bottom_frame, fg_color="transparent")
+            amount_frame.pack(fill="x", pady=(0, 5))
+            
+            ctk.CTkLabel(amount_frame, text="Количество:", font=("Arial", 10)).pack(side="left")
+            amount_var = tk.StringVar(value="1")
+            resource_amount_vars[resource] = amount_var
+            
+            amount_entry = ctk.CTkEntry(amount_frame, 
+                                    textvariable=amount_var,
+                                    width=60,
+                                    font=("Arial", 10))
+            amount_entry.pack(side="right", padx=(5, 0))
+
+            # Чекбокс выбора с ограничением
+            checkbox_var = tk.BooleanVar(value=False)
+            checkbox_vars[resource] = checkbox_var
+            
+            def on_checkbox_toggle():
+                if checkbox_var.get():
+                    if len(selected_resources) >= 5:
+                        checkbox_var.set(False)
+                        messagebox.showwarning("Лимит", "Можно выбрать не более 5 ресурсов!")
+                        return
+                    selected_resources.append(resource)
+                else:
+                    if resource in selected_resources:
+                        selected_resources.remove(resource)
+                
+                # Обновляем счетчик
+                selected_count.set(f"{len(selected_resources)}/5")
+            
+            checkbox = ctk.CTkCheckBox(
+                bottom_frame,
+                text="Выбрать",
+                variable=checkbox_var,
+                font=("Arial", 12),
+                command=on_checkbox_toggle
+            )
+            checkbox.pack(pady=10)
+            
+            return card_frame
+        
+        def calculate_columns(container_width):
+            min_card_width = 180
+            spacing = 10
+            max_columns = max(1, container_width // (min_card_width + spacing))
+            if max_columns * (min_card_width + spacing) - spacing <= container_width:
+                return max_columns, min_card_width
+            return 1, -1
+        
+        # Словарь для хранения карточек ресурсов
+        resource_cards = {}
+        
+        def update_grid(canvas, items_frame, items):
+            container_width = canvas.winfo_width()
+            if container_width < 1:
+                return
+            
+            columns, card_width = calculate_columns(container_width)
+            
+            # Сохраняем состояние чекбоксов перед обновлением
+            saved_states = {}
+            for resource, checkbox_var in checkbox_vars.items():
+                saved_states[resource] = checkbox_var.get()
+            
+            # Очищаем только grid, но не удаляем карточки
+            for widget in items_frame.grid_slaves():
+                widget.grid_forget()
+            
+            # Перераспределяем карточки по новой сетке
+            for i, item in enumerate(items):
+                row = i // columns
+                col = i % columns
+                
+                # Если карточка еще не создана, создаем ее
+                if item not in resource_cards:
+                    resource_cards[item] = create_resource_card(items_frame, item, item in mod_resources)
+                
+                card = resource_cards[item]
+                if card_width == -1:
+                    card.configure(width=container_width - 20)
+                else:
+                    card.configure(width=card_width)
+                card.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
+                
+                # Восстанавливаем состояние чекбокса
+                if item in saved_states:
+                    checkbox_vars[item].set(saved_states[item])
+            
+            items_frame.update_idletasks()
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            
+            if items_frame.winfo_height() <= canvas.winfo_height():
+                canvas.yview_moveto(0)
+                scrollbar.pack_forget()
+            else:
+                scrollbar.pack(side="right", fill="y")
+        
+        # Создаем скроллируемый контейнер
+        canvas = tk.Canvas(content_frame, bg="#3a3a3a", highlightthickness=0)
+        scrollbar = ctk.CTkScrollbar(content_frame, orientation="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True, padx=10, pady=10)
+        
+        items_frame = ctk.CTkFrame(canvas, fg_color="#3a3a3a")
+        canvas.create_window((0, 0), window=items_frame, anchor="nw")
+
+        def on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        def on_button_4(event):
+            canvas.yview_scroll(-1, "units")
+        
+        def on_button_5(event):
+            canvas.yview_scroll(1, "units")
+        
+        canvas.bind("<MouseWheel>", on_mousewheel)
+        canvas.bind("<Button-4>", on_button_4)
+        canvas.bind("<Button-5>", on_button_5)
+        
+        # Объединяем все ресурсы в один список
+        all_resources = default_resources + mod_resources
+        
+        # Сразу вызываем обновление сетки после создания
+        canvas.after(100, lambda: update_grid(canvas, items_frame, all_resources))
+        
+        canvas.bind("<Configure>", lambda e: update_grid(canvas, items_frame, all_resources))
+        items_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        
+        # Фрейм с настройками
+        settings_frame = ctk.CTkFrame(main_frame, fg_color="#3a3a3a", corner_radius=8, height=80)
+        settings_frame.pack(fill="x", pady=15)
+        settings_frame.pack_propagate(False)
+        
+        settings_inner = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        settings_inner.pack(expand=True, padx=20, pady=15)
+        
+        # Счетчик выбранных ресурсов
+        ctk.CTkLabel(settings_inner, 
+                    textvariable=selected_count,
+                    font=("Arial", 16, "bold"),
+                    text_color="#ffffff").pack(side="left", padx=20)
+        
+        ctk.CTkLabel(settings_inner, 
+                    text="Выбрано предметов (максимум 5)",
+                    font=("Arial", 14),
+                    text_color="#cccccc").pack(side="left", padx=10)
+        
+        # Фрейм с кнопками
+        footer_frame = ctk.CTkFrame(main_frame, height=70, fg_color="#3a3a3a", corner_radius=8)
+        footer_frame.pack(fill="x", pady=(0, 0))
+        
+        btn_frame = ctk.CTkFrame(footer_frame, fg_color="transparent")
+        btn_frame.pack(expand=True, pady=15)
+
+        def save_resource():
+            if not selected_resources:
+                messagebox.showerror("Ошибка", "Выберите хотя бы один предмет!")
+                return
+            
+            # Создаем структуру consumes для нескольких ресурсов
+            resources_config = []
+            for resource in selected_resources:
+                # Берем количество из поля ввода
+                try:
+                    amount = float(resource_amount_vars[resource].get())
+                except ValueError:
+                    amount = 1  # Значение по умолчанию при ошибке
+                
+                resource_config = {
+                    "item": resource,
+                    "amount": amount
+                }
+                resources_config.append(resource_config)
+            
+            # Сохраняем в блок
+            if "consumes" not in block_data:
+                block_data["consumes"] = {}
+            
+            # Сохраняем с автоматическими значениями booster=true и optional=true
+            block_data["consumes"]["items"] = {
+                "items": resources_config,
+                "booster": True,
+                "optional": True
+            }
+            
+            try:
+                block_type = block_data.get("type")
+                content_folder = os.path.join("mindustry_mod_creator", "mods", self.mod_name, "content", "blocks", block_type)
+                os.makedirs(content_folder, exist_ok=True)
+                
+                block_path = os.path.join(content_folder, f"{block_name}.json")
+                with open(block_path, "w", encoding="utf-8") as f:
+                    json.dump(block_data, f, indent=4, ensure_ascii=False)
+                
+                messagebox.showinfo("Успех", f"{len(selected_resources)} предметов добавлены в блок '{block_name}'!")
+                
+                # Переход к следующему редактору
+                self.open_requirements_editor(block_name, block_data)
+            
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Не удалось сохранить предметы: {str(e)}")
+        
+        def skip_resource():
+            # Переход к следующему редактору
+            self.open_requirements_editor(block_name, block_data)
+        
+        ctk.CTkButton(btn_frame, 
+                    text="Сохранить", 
+                    width=140, 
+                    height=45,
+                    font=("Arial", 14),
+                    command=save_resource).pack(side="left", padx=20)
+        
