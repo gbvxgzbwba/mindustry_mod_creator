@@ -17,16 +17,22 @@ from mindustry_mod_creator.Creator.utils.resource_utils import resource_path
 
 ctk.set_appearance_mode("Dark")
 from mindustry_mod_creator.Creator.utils.lang_system import LangT
+
 def get_local_version(file_path):
     """Извлекает версию из локального файла"""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
+            # Сначала пробуем найти VERSION = "x.x"
             match = re.search(r'VERSION\s*=\s*"([\d.]+)"', content)
             if match:
                 return match.group(1)
+            # Затем пробуем найти JSON формат {"VERSION": "x.x"}
+            match = re.search(r'{"VERSION"\s*:\s*"([\d.]+)"', content)
+            if match:
+                return match.group(1)
     except Exception as e:
-        print(f"{LangT("Ошибка при чтении файла")} {file_path}: {e}")
+        print(f"{LangT('Ошибка при чтении файла')} {file_path}: {e}")
     return None
 
 def get_github_file_version(relative_path):
@@ -39,15 +45,20 @@ def get_github_file_version(relative_path):
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
             content = response.text
+            # Сначала пробуем найти VERSION = "x.x"
             match = re.search(r'VERSION\s*=\s*"([\d.]+)"', content)
             if match:
                 return match.group(1), content
+            # Затем пробуем найти JSON формат {"VERSION": "x.x"}
+            match = re.search(r'{"VERSION"\s*:\s*"([\d.]+)"', content)
+            if match:
+                return match.group(1), content
             else:
-                print(f"{LangT("VERSION не найден в файле")} {github_path} {LangT("на GitHub")}")
+                print(f"{LangT('VERSION не найден в файле')} {github_path} {LangT('на GitHub')}")
         else:
-            print(f"{LangT("Ошибка HTTP")} {response.status_code} {LangT("для")} {github_path}")
+            print(f"{LangT('Ошибка HTTP')} {response.status_code} {LangT('для')} {github_path}")
     except Exception as e:
-        print(f"{LangT("Ошибка при получении версии файла")} {relative_path} {LangT("с GitHub:")} {e}")
+        print(f"{LangT('Ошибка при получении версии файла')} {relative_path} {LangT('с GitHub:')} {e}")
     return None, None
 
 def compare_versions(version1, version2):
@@ -80,43 +91,51 @@ def update_local_file(local_file_path, new_content):
             f.write(new_content)
         return True
     except Exception as e:
-        print(f"{LangT("Ошибка при обновлении файла")} {local_file_path}: {e}")
+        print(f"{LangT('Ошибка при обновлении файла')} {local_file_path}: {e}")
     return False
 
-def find_py_files_with_version():
-    """Находит все .py файлы с определением VERSION в структуре mindustry_mod_creator/Creator/{folders}/{py_files}.py"""
-    py_files = []
+def find_files_with_version():
+    """Находит все .py и .json файлы с определением VERSION в структуре mindustry_mod_creator/Creator/{folders}/{files}"""
+    files = []
     base_path = Path(__file__).parent
     
     # Путь к папке mindustry_mod_creator/Creator
     creator_path = base_path / "mindustry_mod_creator" / "Creator"
     
     if not creator_path.exists():
-        print(f"{LangT("Папка не найдена:")} {creator_path}")
-        return py_files
+        print(f"{LangT('Папка не найдена:')} {creator_path}")
+        return files
     
     # Ищем все .py файлы в подпапках Creator
     for py_file in creator_path.rglob("*.py"):
-        # Пропускаем файлы в корне Creator, ищем только в подпапках
-        if py_file.parent == creator_path:
-            continue
-            
         version = get_local_version(py_file)
         if version:
             # Получаем относительный путь от Creator
             relative_path = py_file.relative_to(creator_path)
-            py_files.append({
+            files.append({
                 'local_path': py_file,
                 'relative_path': str(relative_path),
                 'local_version': version
             })
     
-    return py_files
+    # Ищем все .json файлы в подпапках Creator
+    for json_file in creator_path.rglob("*.json"):
+        version = get_local_version(json_file)
+        if version:
+            # Получаем относительный путь от Creator
+            relative_path = json_file.relative_to(creator_path)
+            files.append({
+                'local_path': json_file,
+                'relative_path': str(relative_path),
+                'local_version': version
+            })
+    
+    return files
 
 def check_and_update_versions():
     """Проверяет версии всех файлов и предлагает обновление"""
     # Находим все локальные файлы с версиями
-    local_files = find_py_files_with_version()
+    local_files = find_files_with_version()
     
     if not local_files:
         print(LangT("Не найдены файлы с версиями для проверки"))
@@ -129,7 +148,7 @@ def check_and_update_versions():
         github_version, github_content = get_github_file_version(file_info['relative_path'])
         
         if not github_version:
-            print(f"{LangT("Не удалось получить версию для")} {file_info['relative_path']} с GitHub")
+            print(f"{LangT('Не удалось получить версию для')} {file_info['relative_path']} с GitHub")
             continue
         
         comparison = compare_versions(file_info['local_version'], github_version)
@@ -155,7 +174,7 @@ def check_and_update_versions():
         
         result = messagebox.askyesno(
             LangT("Обновление доступно"),
-            f"{LangT("Найдены обновления для следующих файлов:")}\n\n{update_info}\n\n{LangT("Обновить файлы?")}",
+            f"{LangT('Найдены обновления для следующих файлов:')}\n\n{update_info}\n\n{LangT('Обновить файлы?')}",
             parent=root
         )
         root.destroy()
@@ -166,15 +185,15 @@ def check_and_update_versions():
             for file_info in files_to_update:
                 success = update_local_file(file_info['local_path'], file_info['github_content'])
                 if success:
-                    print(f"{LangT("Успешно обновлен:")} {file_info['relative_path']}")
+                    print(f"{LangT('Успешно обновлен:')} {file_info['relative_path']}")
                     success_count += 1
                 else:
-                    print(f"{LangT("Ошибка при обновлении:")} {file_info['relative_path']}")
+                    print(f"{LangT('Ошибка при обновлении:')} {file_info['relative_path']}")
             
             if success_count > 0:
                 root = tk.Tk()
                 root.withdraw()
-                messagebox.showinfo(LangT("Обновление завершено"), f"{LangT("Успешно обновлено")} {success_count} {LangT("файлов!")}")
+                messagebox.showinfo(LangT("Обновление завершено"), f"{LangT('Успешно обновлено')} {success_count} {LangT('файлов!')}")
                 root.destroy()
                 
                 # Перезапускаем приложение после обновления
