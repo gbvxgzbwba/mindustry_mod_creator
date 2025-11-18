@@ -44,6 +44,13 @@ if errorlevel 1 (
     echo %ESC%[92mcustomtkinter установлен!%ESC%[0m
 )
 
+python -c "import requests" >nul 2>&1
+if errorlevel 1 (
+    echo %ESC%[93mУстанавливаем requests...%ESC%[0m
+    pip install requests
+    echo %ESC%[93mrequests установлен!%ESC%[0m
+)
+
 python -c "import PIL" >nul 2>&1
 if errorlevel 1 (
     echo %ESC%[93mУстанавливаем pillow...%ESC%[0m
