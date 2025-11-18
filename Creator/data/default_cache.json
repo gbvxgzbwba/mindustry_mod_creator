@@ -96,5 +96,9 @@
     "Battery": [
         "battery-large",
         "battery"
+    ],
+    "MendProjector": [
+        "mend-projector",
+        "mender"
     ]
 }

@@ -1,5 +1,5 @@
 # Конфигурация типов блоков
-VERSION = "1.0"
+VERSION = "1.1"
 BLOCK_TYPES_CONFIG = {
     "wall": {
         "name": "Стена",
@@ -113,6 +113,12 @@ BLOCK_TYPES_CONFIG = {
         "name": "Наземная помпа",
         "icon": "water-extractor.png",
         "category": "production",
+        "size_range": (1, 15)
+    },
+    "MendProjector": {
+        "name": "Регенератор",
+        "icon": "mend-projector.png",
+        "category": "effect",
         "size_range": (1, 15)
     }
 }
