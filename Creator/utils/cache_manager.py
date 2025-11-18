@@ -1,6 +1,6 @@
 import json
 import os
-VERSION = "1.0"
+VERSION = "1.1"
 class CacheManager:
     def __init__(self, mod_name):
         self.mod_name = mod_name
@@ -71,6 +71,10 @@ class CacheManager:
             "conduit": [
                 "conduit",
                 "pulse-conduit"
+            ],
+            "MendProjector": [
+                "mend-projector",
+                "mender"
             ],
             "Pump": ["impulse-pump", "rotary-pump", "mechanical-pump"],
             "SolidPump": ["water-extractor"],
