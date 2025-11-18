@@ -1,5 +1,6 @@
 {
     "_comment": "Не удаляйте этот фаил он нужен для работы исследования",
+    "VERSION":"1.0",
     "wall": [
         "copper-wall",
         "copper-wall-large",
