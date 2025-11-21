@@ -1,6 +1,6 @@
 import json
 import os
-VERSION = "1.1"
+VERSION = "1.2"
 class CacheManager:
     def __init__(self, mod_name):
         self.mod_name = mod_name
@@ -85,7 +85,8 @@ class CacheManager:
             "liquid_router": ["liquid-router"],
             "Liquid_Junction": ["Liquid-Junction"],
             "Liquid_Tank": ["liquid-container", "liquid-tank"],
-            "Battery": ["Battery-large", "Battery"]
+            "Battery": ["Battery-large", "Battery"],
+            "OverdriveProjector": ["overdrive-projector"]
         }
     
     def load_or_create_cache(self):

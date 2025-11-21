@@ -13,7 +13,7 @@ from tkinter import messagebox, Menu
 from PIL import Image
 from utils.resource_utils import safe_navigation
 from utils.lang_system import LangT
-VERSION = "1.1"
+VERSION = "1.2"
 class ContentEditor:
     def __init__(self, root, mod_folder, mod_name, main_app):
         self.root = root
@@ -2165,6 +2165,9 @@ class ContentEditor:
                         elif block_type == "MendProjector":
                             texture_names = ["mend-projector.png", "mend-projector-top.png"]
                             base_url = "https://raw.githubusercontent.com/Anuken/Mindustry/master/core/assets-raw/sprites/blocks/defense/"
+                        elif block_type == "OverdriveProjector":
+                            texture_names = ["overdrive-projector.png", "overdrive-projector-top.png"]
+                            base_url = "https://raw.githubusercontent.com/Anuken/Mindustry/master/core/assets-raw/sprites/blocks/defense/"
                         else:
                             raise ValueError(f"{LangT("Неизвестный тип блока:")} {block_type}")
 
@@ -2245,6 +2248,8 @@ class ContentEditor:
                                             new_name = texture.replace("water-extractor", block_name)
                                         elif block_type == "MendProjector":
                                             new_name = texture.replace("mend-projector", block_name)
+                                        elif block_type == "OverdriveProjector":
+                                            new_name = texture.replace("overdrive-projector", block_name)
                                         else:
                                             new_name = f"{block_name}{texture[texture.find('-'):]}" if '-' in texture else f"{block_name}.png"
                                         

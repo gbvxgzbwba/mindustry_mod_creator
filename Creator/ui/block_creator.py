@@ -9,7 +9,7 @@ from PIL import Image
 from utils.cache_manager import CacheManager
 from utils.resource_utils import safe_navigation, name_exists_in_content
 from utils.lang_system import LangT
-VERSION = "1.1"
+VERSION = "1.2"
 class BlockCreator:
     def __init__(self, root, mod_folder, mod_name, main_app):
         self.root = root
@@ -104,7 +104,8 @@ class BlockCreator:
                             "disassembler": {"layers": [["production/disassembler.png", 2],["production/disassembler-bottom.png", 1],["production/disassembler-spinner.png", 3]]},
                             "pulverizer": {"layers": [["production/pulverizer.png", 1],["production/pulverizer-top.png", 2],["production/pulverizer-rotator.png", 3]]},
 
-                            "mend-projector": {"layers": [["defense/mend-projector.png", 1]]}
+                            "mend-projector": {"layers": [["defense/mend-projector.png", 1]]},
+                            "overdrive-projector": {"layers": [["defense/overdrive-projector.png", 1]]}
                         },
                         False
                     )
@@ -336,7 +337,8 @@ class BlockCreator:
             (LangT("Лучевой узел"), "beam-node.png", lambda: self.cb_creator_b("BeamNode")),
             (LangT("Помпа"), "rotary-pump.png", lambda: self.cb_creator_b("Pump")),
             (LangT("Наземная помпа"), "water-extractor.png", lambda: self.cb_creator_b("SolidPump")),
-            ("Регенератор", "mend-projector.png", lambda: self.cb_creator_b("MendProjector"))
+            ("Регенератор", "mend-projector.png", lambda: self.cb_creator_b("MendProjector")),
+            ("Сверхприводный проектор", "overdrive-projector.png", lambda: self.cb_creator_b("OverdriveProjector"))
         ]
 
         blocks_container = ctk.CTkFrame(scrollable_frame, fg_color="transparent")
@@ -435,7 +437,7 @@ class BlockCreator:
             fixed_size_1_blocks = ["conveyor", "conduit", "Junction", "Unloader", "liquid_router", "LiquidJunction", "BeamNode"]
             size_1_2_blocks = ["router"]
             size_1_15_blocks = ["PowerNode", "wall", "SolarGenerator", "GenericCrafter", "StorageBlock", 
-                            "ConsumeGenerator", "Battery", "ThermalGenerator", "Liquid_Tank", "Pump", "SolidPump", "MendProjector"]
+                            "ConsumeGenerator", "Battery", "ThermalGenerator", "Liquid_Tank", "Pump", "SolidPump", "MendProjector", "OverdriveProjector"]
             
             if block_type in fixed_size_1_blocks:
                 widgets['size'] = ctk.CTkEntry(self.root, width=150)
@@ -556,6 +558,12 @@ class BlockCreator:
                 widgets['phaseColor'] = self.create_field("цвет после буста (RRGGBB)", 150)
                 widgets['lightRadius'] = self.create_field("Радиус свечения (макс. 30)", 150)
 
+            if block_type == "OverdriveProjector":
+                widgets['energy_label'] = self.create_field("Потребление энергии (макс 100000)", 150)
+                widgets['range'] = self.create_field("Радиус (макс. 30)", 150)
+                widgets['speedBoost'] = self.create_field("Ускорения (макс. 300)", 150)
+                widgets['useTime'] = self.create_field("useTime", 150)
+
         create_global_fields()
         create_local_fields()
         
@@ -574,7 +582,7 @@ class BlockCreator:
                 fixed_size_1_blocks = ["conveyor", "conduit", "Junction", "Unloader", "liquid_router", "LiquidJunction", "BeamNode"]
                 size_1_2_blocks = ["router"]
                 size_1_15_blocks = ["PowerNode", "wall", "SolarGenerator", "GenericCrafter", "StorageBlock", 
-                                "ConsumeGenerator", "Battery", "ThermalGenerator", "Liquid_Tank", "Pump", "SolidPump", "MendProjector"]
+                                "ConsumeGenerator", "Battery", "ThermalGenerator", "Liquid_Tank", "Pump", "SolidPump", "MendProjector", "OverdriveProjector"]
                 
                 if block_type in fixed_size_1_blocks:
                     size = 1
@@ -726,42 +734,56 @@ class BlockCreator:
                         })
 
                 if block_type == "MendProjector":
-                    energy_label = int(widgets['energy_label'].get())//60
-                    rangeX = int(widgets['range'].get())*8
+                    energy_label = int(widgets['energy_label'].get())
+                    rangeX = int(widgets['range'].get())
                     healPercent = int(widgets['healPercent'].get())
                     phaseBoost = int(widgets['phaseBoost'].get())
-                    phaseRangeBoost = int(widgets['phaseRangeBoost'].get())*8
-                    useTime = int(widgets['useTime'].get())*60
+                    phaseRangeBoost = int(widgets['phaseRangeBoost'].get())
+                    useTime = int(widgets['useTime'].get())
                     baseColor = int(widgets['baseColor'].get())
                     phaseColor = int(widgets['phaseColor'].get())
-                    lightRadius = int(widgets['lightRadius'].get())*8
+                    lightRadius = int(widgets['lightRadius'].get())
 
-                    if rangeX//8 < 1 or rangeX//8 > 30:
+                    if rangeX < 1 or rangeX > 30:
                         raise ValueError("Радиус не более 30")
                     if healPercent < 1 or healPercent > 300:
                         raise ValueError("Восстановления не более 300")
                     if phaseBoost < 1 or phaseBoost > 300:
                         raise ValueError("Усиления восстановления неболее 300")
-                    if phaseRangeBoost//8 < 1 or phaseRangeBoost//8 > 150:
+                    if phaseRangeBoost < 1 or phaseRangeBoost > 150:
                         raise ValueError("Усиления радиуса не более 150")
-                    if useTime//60 < 1 or useTime//60 > 30:
+                    if useTime < 1 or useTime > 30:
                         raise ValueError("Мин время лечения 1 сек макс 30")
-                    if lightRadius//8 < 1 or lightRadius//8 > 30:
+                    if lightRadius < 1 or lightRadius > 30:
                         raise ValueError("Макс радиус свечения 30")
-                    if energy_label*60 < 1 or energy_label*60 > 100000:
+                    if energy_label < 1 or energy_label > 100000:
                         raise ValueError("Макс энергия 100000")
                     
                     block_data.update({
-                        "range": rangeX,
+                        "range": rangeX*8,
                         "healPercent": healPercent,
-                        "phaseBoost": phaseBoost,
+                        "phaseBoost": phaseBoost/2,
                         "useTime": useTime,
                         "phaseColor": phaseColor,
                         "baseColor": baseColor,
-                        "phaseRangeBoost": phaseRangeBoost,
-                        "lightRadius": lightRadius,
+                        "phaseRangeBoost": phaseRangeBoost*8,
+                        "lightRadius": lightRadius*8,
                         "consumes": {
-                            "power": energy_label
+                            "power": energy_label/60
+                        }
+                    })
+
+                if block_type == "OverdriveProjector":
+                    energy_label = int(widgets['energy_label'].get())
+                    rangeX = int(widgets['range'].get())
+                    useTime = int(widgets['useTime'].get())
+                    speedBoost = int(widgets['speedBoost'].get())
+                    block_data.update({
+                        "speedBoost": speedBoost,
+                        "range": rangeX*8,
+                        "useTime": useTime,
+                        "consumes": {
+                            "power": energy_label/60
                         }
                     })
 
@@ -772,7 +794,7 @@ class BlockCreator:
                     "Battery": "power", "ThermalGenerator": "power", "BeamNode": "power",
                     "Junction": "distribution", "Unloader": "distribution", "liquid_router": "liquid",
                     "Liquid_Tank": "liquid", "LiquidJunction": "liquid", "Pump": "liquid",
-                    "SolidPump": "production", "MendProjector": "effect"
+                    "SolidPump": "production", "MendProjector": "effect", "OverdriveProjector": "effect"
                 }
                 block_data["category"] = category_map.get(block_type, "misc")
                 
@@ -798,8 +820,8 @@ class BlockCreator:
                 self.open_consumes_editor(name, block_data, "items")
             elif block_type == "SolidPump":
                 self.open_solidpump_liquid_edit(name, block_data)
-            elif block_type == "MendProjector":
-                self.open_mender_resource_editor(name, block_data, "items")
+            elif block_type == "MendProjector" or "OverdriveProjector":
+                self.open_mender_resource_editor(name, block_data)
             else:
                 self.open_requirements_editor(name, block_data)
         
