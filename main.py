@@ -35,10 +35,21 @@ def get_local_version(file_path):
         print(f"{LangT('Ошибка при чтении файла')} {file_path}: {e}")
     return None
 
+def check_github_file_exists(relative_path):
+    """Проверяет существование файла на GitHub"""
+    try:
+        github_path = relative_path.replace('\\', '/')
+        url = f"https://raw.githubusercontent.com/gbvxgzbwba/mindustry_mod_creator/main/Creator/{github_path}"
+        
+        response = requests.head(url, timeout=10)
+        return response.status_code == 200
+    except Exception as e:
+        print(f"{LangT('Ошибка при проверке файла')} {relative_path} {LangT('на GitHub:')} {e}")
+        return False
+
 def get_github_file_version(relative_path):
     """Получает версию конкретного файла с GitHub"""
     try:
-        # Конвертируем путь в формат GitHub (заменяем \ на /)
         github_path = relative_path.replace('\\', '/')
         url = f"https://raw.githubusercontent.com/gbvxgzbwba/mindustry_mod_creator/main/Creator/{github_path}"
         
@@ -94,6 +105,17 @@ def update_local_file(local_file_path, new_content):
         print(f"{LangT('Ошибка при обновлении файла')} {local_file_path}: {e}")
     return False
 
+def delete_local_file(local_file_path):
+    """Удаляет локальный файл"""
+    try:
+        if os.path.exists(local_file_path):
+            os.remove(local_file_path)
+            print(f"{LangT('Удален локальный файл:')} {local_file_path}")
+            return True
+    except Exception as e:
+        print(f"{LangT('Ошибка при удалении файла')} {local_file_path}: {e}")
+    return False
+
 def find_files_with_version():
     """Находит все .py и .json файлы с определением VERSION в структуре mindustry_mod_creator/Creator/{folders}/{files}"""
     files = []
@@ -132,8 +154,17 @@ def find_files_with_version():
     
     return files
 
-def check_and_update_versions():
-    """Проверяет версии всех файлов и предлагает обновление"""
+def check_and_sync_structure():
+    """Проверяет структуру файлов и синхронизирует с GitHub"""
+    print(LangT("Проверка структуры файлов..."))
+    
+    base_path = Path(__file__).parent
+    creator_path = base_path / "mindustry_mod_creator" / "Creator"
+    
+    if not creator_path.exists():
+        print(f"{LangT('Папка не найдена:')} {creator_path}")
+        return True
+    
     # Находим все локальные файлы с версиями
     local_files = find_files_with_version()
     
@@ -142,27 +173,63 @@ def check_and_update_versions():
         return True
     
     files_to_update = []
+    files_to_delete = []
     
-    # Проверяем каждый файл
+    # Проверяем структуру каждого файла
     for file_info in local_files:
-        github_version, github_content = get_github_file_version(file_info['relative_path'])
+        relative_path = file_info['relative_path']
+        local_file_path = file_info['local_path']
+        
+        # Проверяем существование файла на GitHub
+        github_exists = check_github_file_exists(relative_path)
+        
+        if not github_exists:
+            print(f"{LangT('Файл отсутствует на GitHub:')} {relative_path}")
+            files_to_delete.append(file_info)
+            continue
+        
+        # Если файл есть на GitHub, проверяем версию
+        github_version, github_content = get_github_file_version(relative_path)
         
         if not github_version:
-            print(f"{LangT('Не удалось получить версию для')} {file_info['relative_path']} с GitHub")
+            print(f"{LangT('Не удалось получить версию для')} {relative_path} {LangT('с GitHub')}")
             continue
         
         comparison = compare_versions(file_info['local_version'], github_version)
         
         if comparison < 0:
             files_to_update.append({
-                'local_path': file_info['local_path'],
-                'relative_path': file_info['relative_path'],
+                'local_path': local_file_path,
+                'relative_path': relative_path,
                 'local_version': file_info['local_version'],
                 'github_version': github_version,
                 'github_content': github_content
             })
     
-    # Если есть файлы для обновления, спрашиваем пользователя
+    # Обрабатываем файлы для удаления
+    if files_to_delete:
+        delete_info = "\n".join([
+            f"- {file['relative_path']} (v{file['local_version']})"
+            for file in files_to_delete
+        ])
+        
+        root = tk.Tk()
+        root.withdraw()
+        
+        result = messagebox.askyesno(
+            LangT("Синхронизация структуры"),
+            f"{LangT('Следующие файлы отсутствуют на GitHub и будут удалены локально:')}\n\n{delete_info}\n\n{LangT('Продолжить?')}",
+            parent=root
+        )
+        root.destroy()
+        
+        if result:
+            for file_info in files_to_delete:
+                success = delete_local_file(file_info['local_path'])
+                if not success:
+                    print(f"{LangT('Не удалось удалить файл:')} {file_info['relative_path']}")
+    
+    # Обрабатываем файлы для обновления
     if files_to_update:
         update_info = "\n".join([
             f"- {file['relative_path']}: {file['local_version']} → {file['github_version']}"
@@ -170,7 +237,7 @@ def check_and_update_versions():
         ])
         
         root = tk.Tk()
-        root.withdraw()  # Скрываем основное окно
+        root.withdraw()
         
         result = messagebox.askyesno(
             LangT("Обновление доступно"),
@@ -180,7 +247,6 @@ def check_and_update_versions():
         root.destroy()
         
         if result:
-            # Обновляем файлы
             success_count = 0
             for file_info in files_to_update:
                 success = update_local_file(file_info['local_path'], file_info['github_content'])
@@ -200,14 +266,14 @@ def check_and_update_versions():
                 print(LangT("Перезапуск приложения..."))
                 python = sys.executable
                 os.execl(python, python, *sys.argv)
-                return False  # Важно: возвращаем False чтобы предотвратить запуск основного приложения
+                return False
     
     return True
 
 def main():
-    # Сначала проверяем обновления
-    print(LangT("Проверка обновлений..."))
-    should_continue = check_and_update_versions()
+    # Сначала проверяем и синхронизируем структуру
+    print(LangT("Проверка обновлений и синхронизация структуры..."))
+    should_continue = check_and_sync_structure()
     
     if should_continue:
         # Запускаем основное приложение только если не было обновления с перезапуском
